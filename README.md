@@ -84,6 +84,7 @@ def get_home() -> Optional[Path]:
 ## Known Limitations
 
 - **Star imports ignored**: `from X import *` cannot be analyzed
+- **Semi-colon imports / partial line removals**: These are not supported yet
 
 ## Development
 

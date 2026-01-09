@@ -64,20 +64,20 @@ class ScopeStack:
         for i in range(len(self.scopes) - 1, -1, -1):
             scope = self.scopes[i]
 
-            if name in scope.bindings:
-                # Found the binding - is it module scope?
-                return scope.scope_type == ScopeType.MODULE
-
             # Class scope is special: when looking up from inside a method
             # (nested function), class-level bindings are NOT visible.
             # They're only visible directly in the class body itself.
             if scope.scope_type == ScopeType.CLASS:
                 # If we're directly in the class body (class is current scope),
-                # class bindings ARE visible (handled above).
+                # class bindings ARE visible (check below).
                 # If we're in a nested scope (method/function inside class),
                 # skip the class scope entirely.
                 if i < len(self.scopes) - 1:
                     continue
+
+            if name in scope.bindings:
+                # Found the binding - is it module scope?
+                return scope.scope_type == ScopeType.MODULE
 
         # Not found in any scope - would be a global/builtin or undefined.
         # For our purposes, if not found locally, assume it resolves to module scope.
@@ -97,6 +97,9 @@ class ScopeAwareNameCollector(ast.NodeVisitor):
         # Track names declared global/nonlocal
         self._global_names: set[str] = set()
         self._nonlocal_names: set[str] = set()
+        # Track names bound at module level by non-import statements
+        # These shadow any imports of the same name
+        self._module_level_shadows: set[str] = set()
 
     # -------------------------------------------------------------------------
     # Helper methods
@@ -106,6 +109,9 @@ class ScopeAwareNameCollector(ast.NodeVisitor):
         """Extract and add bindings from assignment targets."""
         if isinstance(target, ast.Name):
             self._scope_stack.add_binding(target.id)
+            # Track module-level shadows
+            if self._scope_stack.current().scope_type == ScopeType.MODULE:
+                self._module_level_shadows.add(target.id)
         elif isinstance(target, (ast.Tuple, ast.List)):
             for elt in target.elts:
                 self._add_binding_from_target(elt)
@@ -170,24 +176,28 @@ class ScopeAwareNameCollector(ast.NodeVisitor):
         if isinstance(node.ctx, ast.Load):
             # Check if this name resolves to module scope
             if self._scope_stack.resolves_to_module_scope(node.id):
-                self.module_scope_usages.add(node.id)
+                # Don't count as import usage if shadowed at module level
+                if node.id not in self._module_level_shadows:
+                    self.module_scope_usages.add(node.id)
         elif isinstance(node.ctx, ast.Store):
             self._scope_stack.add_binding(node.id)
+            # Track module-level shadows
+            if self._scope_stack.current().scope_type == ScopeType.MODULE:
+                self._module_level_shadows.add(node.id)
         # Del context: don't add binding, don't count as usage
 
     def visit_Attribute(self, node: ast.Attribute) -> None:
         """Track attribute access root names."""
-        if not isinstance(node.ctx, ast.Load):
-            self.generic_visit(node)
-            return
-
         # Walk up to find the root name
+        # For both Load (obj.attr) and Store (obj.attr = x), we use the root object
         current: ast.expr = node
         while isinstance(current, ast.Attribute):
             current = current.value
         if isinstance(current, ast.Name) and isinstance(current.ctx, ast.Load):
             if self._scope_stack.resolves_to_module_scope(current.id):
-                self.module_scope_usages.add(current.id)
+                # Don't count as import usage if shadowed at module level
+                if current.id not in self._module_level_shadows:
+                    self.module_scope_usages.add(current.id)
         self.generic_visit(node)
 
     # -------------------------------------------------------------------------
@@ -197,7 +207,7 @@ class ScopeAwareNameCollector(ast.NodeVisitor):
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
         """Handle function definitions."""
         # 1. Bind function name in CURRENT scope
-        self._scope_stack.add_binding(node.name)
+        self._add_binding_with_shadow_tracking(node.name)
 
         # 2. Visit decorators in CURRENT scope
         for decorator in node.decorator_list:
@@ -221,7 +231,7 @@ class ScopeAwareNameCollector(ast.NodeVisitor):
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
         """Handle async function definitions (same as sync)."""
-        self._scope_stack.add_binding(node.name)
+        self._add_binding_with_shadow_tracking(node.name)
         for decorator in node.decorator_list:
             self.visit(decorator)
         self._visit_function_annotations_and_defaults(node)
@@ -246,7 +256,7 @@ class ScopeAwareNameCollector(ast.NodeVisitor):
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
         """Handle class definitions."""
         # 1. Bind class name in CURRENT scope
-        self._scope_stack.add_binding(node.name)
+        self._add_binding_with_shadow_tracking(node.name)
 
         # 2. Visit decorators in CURRENT scope
         for decorator in node.decorator_list:
@@ -276,9 +286,12 @@ class ScopeAwareNameCollector(ast.NodeVisitor):
         """Regular assignments bind targets."""
         # Visit value first (RHS is evaluated before binding)
         self.visit(node.value)
-        # Then bind targets
+        # Then bind targets (but also track usage for attribute/subscript targets)
         for target in node.targets:
             self._add_binding_from_target(target)
+            # For attribute and subscript assignments, the root object is used
+            if isinstance(target, (ast.Attribute, ast.Subscript)):
+                self.visit(target)
 
     def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
         """Annotated assignments."""
@@ -286,11 +299,31 @@ class ScopeAwareNameCollector(ast.NodeVisitor):
         if node.value:
             self.visit(node.value)
         self._add_binding_from_target(node.target)
+        # For attribute and subscript assignments, the root object is used
+        if isinstance(node.target, (ast.Attribute, ast.Subscript)):
+            self.visit(node.target)
 
     def visit_AugAssign(self, node: ast.AugAssign) -> None:
-        """Augmented assignments (+=, etc.) don't create new bindings."""
-        # Just visit the parts - the target must already exist
-        self.visit(node.target)
+        """Augmented assignments (+=, etc.) don't create new bindings.
+
+        For `x += 1`, the name `x` must already exist, and this is both
+        a read and a write. We need to track the read as a usage.
+        """
+        # The target is read (to get current value) - track as usage
+        if isinstance(node.target, ast.Name):
+            if self._scope_stack.resolves_to_module_scope(node.target.id):
+                if node.target.id not in self._module_level_shadows:
+                    self.module_scope_usages.add(node.target.id)
+        elif isinstance(node.target, ast.Attribute):
+            # For attribute augmented assign like obj.x += 1, obj is used
+            current: ast.expr = node.target
+            while isinstance(current, ast.Attribute):
+                current = current.value
+            if isinstance(current, ast.Name) and isinstance(current.ctx, ast.Load):
+                if self._scope_stack.resolves_to_module_scope(current.id):
+                    if current.id not in self._module_level_shadows:
+                        self.module_scope_usages.add(current.id)
+        # Visit the value expression
         self.visit(node.value)
 
     def visit_NamedExpr(self, node: ast.NamedExpr) -> None:
@@ -348,7 +381,7 @@ class ScopeAwareNameCollector(ast.NodeVisitor):
         if node.type:
             self.visit(node.type)
         if node.name:
-            self._scope_stack.add_binding(node.name)
+            self._add_binding_with_shadow_tracking(node.name)
         for child in node.body:
             self.visit(child)
 
@@ -366,21 +399,27 @@ class ScopeAwareNameCollector(ast.NodeVisitor):
         for child in node.body:
             self.visit(child)
 
+    def _add_binding_with_shadow_tracking(self, name: str) -> None:
+        """Add a binding and track if it shadows an import at module level."""
+        self._scope_stack.add_binding(name)
+        if self._scope_stack.current().scope_type == ScopeType.MODULE:
+            self._module_level_shadows.add(name)
+
     def _bind_match_pattern(self, pattern: ast.pattern) -> None:
         """Extract bindings from match patterns."""
         if isinstance(pattern, ast.MatchAs):
             if pattern.name:
-                self._scope_stack.add_binding(pattern.name)
+                self._add_binding_with_shadow_tracking(pattern.name)
             if pattern.pattern:
                 self._bind_match_pattern(pattern.pattern)
         elif isinstance(pattern, ast.MatchStar):
             if pattern.name:
-                self._scope_stack.add_binding(pattern.name)
+                self._add_binding_with_shadow_tracking(pattern.name)
         elif isinstance(pattern, ast.MatchMapping):
             for p in pattern.patterns:
                 self._bind_match_pattern(p)
             if pattern.rest:
-                self._scope_stack.add_binding(pattern.rest)
+                self._add_binding_with_shadow_tracking(pattern.rest)
         elif isinstance(pattern, ast.MatchSequence):
             for p in pattern.patterns:
                 self._bind_match_pattern(p)
@@ -535,34 +574,24 @@ class ImportExtractor(ast.NodeVisitor):
 
 
 class NameUsageCollector(ast.NodeVisitor):
-    """Collect all name usages in the code, excluding import statements."""
+    """Collect all name usages from expression ASTs.
+
+    This is a simple collector used only for parsing string annotations.
+    When parsing with mode="eval", we only get expression nodes, so this
+    collector only needs to handle expression-related visitors.
+    """
 
     def __init__(self) -> None:
         self.used_names: set[str] = set()
-        self._in_import = False
-
-    def visit_Import(self, node: ast.Import) -> None:
-        # Don't count names in import statements as usage
-        pass
-
-    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
-        # Don't count names in import statements as usage
-        pass
 
     def visit_Name(self, node: ast.Name) -> None:
-        # Only count Load contexts as usages, not Store (assignment targets)
-        # Store contexts: x = ..., for x in ..., with ... as x, except ... as x
+        # Only count Load contexts as usages
         if isinstance(node.ctx, ast.Load):
             self.used_names.add(node.id)
         self.generic_visit(node)
 
     def visit_Attribute(self, node: ast.Attribute) -> None:
-        # For attribute access like 'os.path', we need to track 'os'
-        # Only count Load contexts (reading), not Store (assignment targets)
-        if not isinstance(node.ctx, ast.Load):
-            self.generic_visit(node)
-            return
-
+        # For attribute access like 'typing.Optional', we need to track 'typing'
         # Walk up to find the root name
         current: ast.expr = node
         while isinstance(current, ast.Attribute):
@@ -570,71 +599,6 @@ class NameUsageCollector(ast.NodeVisitor):
         if isinstance(current, ast.Name) and isinstance(current.ctx, ast.Load):
             self.used_names.add(current.id)
         self.generic_visit(node)
-
-    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
-        # Check decorators for name usage
-        for decorator in node.decorator_list:
-            self.visit(decorator)
-        # Check annotations
-        if node.returns:
-            self.visit(node.returns)
-        for arg in node.args.args + node.args.posonlyargs + node.args.kwonlyargs:
-            if arg.annotation:
-                self.visit(arg.annotation)
-        if node.args.vararg and node.args.vararg.annotation:
-            self.visit(node.args.vararg.annotation)
-        if node.args.kwarg and node.args.kwarg.annotation:
-            self.visit(node.args.kwarg.annotation)
-        # Check default argument values
-        for default in node.args.defaults:
-            self.visit(default)
-        for kw_default in node.args.kw_defaults:
-            if kw_default is not None:
-                self.visit(kw_default)
-        # Visit body
-        for child in node.body:
-            self.visit(child)
-
-    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
-        # Same logic as FunctionDef
-        for decorator in node.decorator_list:
-            self.visit(decorator)
-        if node.returns:
-            self.visit(node.returns)
-        for arg in node.args.args + node.args.posonlyargs + node.args.kwonlyargs:
-            if arg.annotation:
-                self.visit(arg.annotation)
-        if node.args.vararg and node.args.vararg.annotation:
-            self.visit(node.args.vararg.annotation)
-        if node.args.kwarg and node.args.kwarg.annotation:
-            self.visit(node.args.kwarg.annotation)
-        # Check default argument values
-        for default in node.args.defaults:
-            self.visit(default)
-        for kw_default in node.args.kw_defaults:
-            if kw_default is not None:
-                self.visit(kw_default)
-        for child in node.body:
-            self.visit(child)
-
-    def visit_ClassDef(self, node: ast.ClassDef) -> None:
-        # Check decorators and base classes
-        for decorator in node.decorator_list:
-            self.visit(decorator)
-        for base in node.bases:
-            self.visit(base)
-        for keyword in node.keywords:
-            self.visit(keyword.value)
-        # Visit body
-        for child in node.body:
-            self.visit(child)
-
-    def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
-        # Handle annotated assignments: x: Type = value
-        self.visit(node.annotation)
-        if node.value:
-            self.visit(node.value)
-        self.visit(node.target)
 
 
 class StringAnnotationVisitor(ast.NodeVisitor):

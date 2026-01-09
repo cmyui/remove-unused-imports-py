@@ -325,3 +325,246 @@ def test_autofix_complex(s, expected):
     unused = find_unused_imports(s)
     result = remove_unused_imports(s, unused)
     assert result == expected
+
+
+# =============================================================================
+# Additional empty block cases
+# =============================================================================
+
+
+@pytest.mark.parametrize(
+    ('s', 'expected'),
+    (
+        # For-else block becomes empty
+        pytest.param(
+            'for x in []:\n'
+            '    pass\n'
+            'else:\n'
+            '    import os\n'
+            'y = 1\n',
+            'for x in []:\n'
+            '    pass\n'
+            'else:\n'
+            '    pass\n'
+            'y = 1\n',
+            id='for else empty block gets pass',
+        ),
+        # While-else block becomes empty
+        pytest.param(
+            'while False:\n'
+            '    pass\n'
+            'else:\n'
+            '    import os\n'
+            'y = 1\n',
+            'while False:\n'
+            '    pass\n'
+            'else:\n'
+            '    pass\n'
+            'y = 1\n',
+            id='while else empty block gets pass',
+        ),
+        # If-else block becomes empty
+        pytest.param(
+            'if True:\n'
+            '    pass\n'
+            'else:\n'
+            '    import os\n'
+            'y = 1\n',
+            'if True:\n'
+            '    pass\n'
+            'else:\n'
+            '    pass\n'
+            'y = 1\n',
+            id='if else empty block gets pass',
+        ),
+        # Try finally becomes empty
+        pytest.param(
+            'try:\n'
+            '    pass\n'
+            'finally:\n'
+            '    import os\n'
+            'y = 1\n',
+            'try:\n'
+            '    pass\n'
+            'finally:\n'
+            '    pass\n'
+            'y = 1\n',
+            id='try finally empty block gets pass',
+        ),
+        # Except handler body becomes empty
+        pytest.param(
+            'try:\n'
+            '    raise ValueError()\n'
+            'except ValueError:\n'
+            '    import os\n',
+            'try:\n'
+            '    raise ValueError()\n'
+            'except ValueError:\n'
+            '    pass\n',
+            id='except handler empty block gets pass',
+        ),
+        # Async for body becomes empty
+        pytest.param(
+            'async def f():\n'
+            '    async for x in gen():\n'
+            '        import os\n',
+            'async def f():\n'
+            '    async for x in gen():\n'
+            '        pass\n',
+            id='async for empty block gets pass',
+        ),
+        # Async with body becomes empty
+        pytest.param(
+            'async def f():\n'
+            '    async with ctx():\n'
+            '        import os\n',
+            'async def f():\n'
+            '    async with ctx():\n'
+            '        pass\n',
+            id='async with empty block gets pass',
+        ),
+        # Try-else block becomes empty
+        pytest.param(
+            'try:\n'
+            '    x = 1\n'
+            'except ValueError:\n'
+            '    pass\n'
+            'else:\n'
+            '    import os\n'
+            'y = 1\n',
+            'try:\n'
+            '    x = 1\n'
+            'except ValueError:\n'
+            '    pass\n'
+            'else:\n'
+            '    pass\n'
+            'y = 1\n',
+            id='try else empty block gets pass',
+        ),
+    ),
+)
+def test_autofix_pass_insertion_edge_cases(s, expected):
+    """Test pass insertion for various block types."""
+    unused = find_unused_imports(s)
+    result = remove_unused_imports(s, unused)
+    assert result == expected
+
+
+# =============================================================================
+# Partial removal from regular import statements
+# =============================================================================
+
+
+@pytest.mark.parametrize(
+    ('s', 'expected'),
+    (
+        # Partial import removal (not from-import)
+        pytest.param(
+            'import os, sys, json\n'
+            'x = os.getcwd()\n',
+            'import os\n'
+            'x = os.getcwd()\n',
+            id='partial regular import removal',
+        ),
+        # Partial import with aliases
+        pytest.param(
+            'import numpy as np, pandas as pd, scipy as sp\n'
+            'x = np.array([1])\n',
+            'import numpy as np\n'
+            'x = np.array([1])\n',
+            id='partial import with aliases',
+        ),
+    ),
+)
+def test_autofix_partial_regular_import(s, expected):
+    """Test partial removal from regular import statements."""
+    unused = find_unused_imports(s)
+    result = remove_unused_imports(s, unused)
+    assert result == expected
+
+
+# =============================================================================
+# Multi-line import full removal
+# =============================================================================
+
+
+@pytest.mark.parametrize(
+    ('s', 'expected'),
+    (
+        # Full multi-line import removal
+        pytest.param(
+            'from typing import (\n'
+            '    List,\n'
+            '    Dict,\n'
+            ')\n'
+            'x = 1\n',
+            'x = 1\n',
+            id='full multiline import removal',
+        ),
+    ),
+)
+def test_autofix_multiline_full_removal(s, expected):
+    """Test full removal of multi-line imports."""
+    unused = find_unused_imports(s)
+    result = remove_unused_imports(s, unused)
+    assert result == expected
+
+
+# =============================================================================
+# Relative imports
+# =============================================================================
+
+
+@pytest.mark.parametrize(
+    ('s', 'expected'),
+    (
+        # Relative import partial removal
+        pytest.param(
+            'from . import foo, bar, baz\n'
+            'x = foo()\n',
+            'from . import foo\n'
+            'x = foo()\n',
+            id='relative import partial removal',
+        ),
+        # Relative import from submodule
+        pytest.param(
+            'from .submodule import a, b, c\n'
+            'x = a()\n',
+            'from .submodule import a\n'
+            'x = a()\n',
+            id='relative submodule import partial removal',
+        ),
+    ),
+)
+def test_autofix_relative_imports(s, expected):
+    """Test autofix with relative imports."""
+    unused = find_unused_imports(s)
+    result = remove_unused_imports(s, unused)
+    assert result == expected
+
+
+# =============================================================================
+# Leading blank line handling
+# =============================================================================
+
+
+@pytest.mark.parametrize(
+    ('s', 'expected'),
+    (
+        # Removal leaves multiple leading blank lines
+        pytest.param(
+            '\n'
+            'import os\n'
+            '\n'
+            'x = 1\n',
+            '\n'
+            'x = 1\n',
+            id='leading blank line preserved single',
+        ),
+    ),
+)
+def test_autofix_blank_line_cleanup(s, expected):
+    """Test blank line cleanup after removal."""
+    unused = find_unused_imports(s)
+    result = remove_unused_imports(s, unused)
+    assert result == expected
