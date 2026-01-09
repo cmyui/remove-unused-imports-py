@@ -144,6 +144,12 @@ class NameUsageCollector(ast.NodeVisitor):
             self.visit(node.args.vararg.annotation)
         if node.args.kwarg and node.args.kwarg.annotation:
             self.visit(node.args.kwarg.annotation)
+        # Check default argument values
+        for default in node.args.defaults:
+            self.visit(default)
+        for default in node.args.kw_defaults:
+            if default is not None:
+                self.visit(default)
         # Visit body
         for child in node.body:
             self.visit(child)
@@ -161,6 +167,12 @@ class NameUsageCollector(ast.NodeVisitor):
             self.visit(node.args.vararg.annotation)
         if node.args.kwarg and node.args.kwarg.annotation:
             self.visit(node.args.kwarg.annotation)
+        # Check default argument values
+        for default in node.args.defaults:
+            self.visit(default)
+        for default in node.args.kw_defaults:
+            if default is not None:
+                self.visit(default)
         for child in node.body:
             self.visit(child)
 
