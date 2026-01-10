@@ -324,8 +324,8 @@ class GraphBuilder:
                 self._process_file(resolved)
 
             # For from-imports from packages, also check if imported names are submodules
-            # e.g., `from blueprints import booking_form` where booking_form
-            # is a subpackage not explicitly imported in blueprints/__init__.py
+            # e.g., `from mypkg import submodule` where submodule
+            # is a subpackage not explicitly imported in mypkg/__init__.py
             # Only do this for packages (__init__.py), not regular modules
             if (
                 resolved is not None
@@ -343,7 +343,7 @@ class GraphBuilder:
                     # Only check for submodule if name is NOT already available
                     # from the __init__.py. This handles cases like:
                     # - `from models import Foo` where Foo is re-exported in __init__.py
-                    # - `from blueprints import booking_form` where booking_form is
+                    # - `from mypkg import submodule` where submodule is
                     #   a subpackage NOT imported in __init__.py
                     if name in init_names:
                         continue

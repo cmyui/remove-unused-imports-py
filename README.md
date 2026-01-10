@@ -40,6 +40,9 @@ remove-unused-imports --warn-implicit-reexports main.py
 # Warn about circular imports
 remove-unused-imports --warn-circular main.py
 
+# Warn about files that become unreachable after fixing
+remove-unused-imports --warn-unreachable main.py
+
 # Quiet mode (summary only)
 remove-unused-imports -q main.py
 ```
@@ -71,6 +74,7 @@ remove-unused-imports --single-file src/*.py
 - **Cascade detection**: Finds all unused imports in a single pass, even when removing one exposes another
 - **Circular import detection**: Warns about import cycles
 - **Implicit re-export warnings**: Identifies re-exports missing from `__all__`
+- **Unreachable file detection**: Warns about files that become dead code after fixing imports
 
 ### Single-file analysis
 

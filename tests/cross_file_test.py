@@ -540,8 +540,8 @@ def test_cascade_file_still_reachable_via_other_path():
 def test_submodule_not_in_init_is_traversed():
     """Submodules not explicitly imported in __init__.py should still be traversed.
 
-    This handles cases like `from blueprints import booking_form` where
-    `booking_form` is a subpackage that's NOT imported in `blueprints/__init__.py`.
+    This handles cases like `from mypkg import submodule` where
+    `submodule` is a subpackage that's NOT imported in `mypkg/__init__.py`.
     Python allows this at runtime via auto-importing.
     """
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -592,10 +592,10 @@ def test_submodule_not_in_init_is_traversed():
 def test_submodule_not_unreachable_when_parent_reachable():
     """Submodules should NOT be reported as unreachable if parent package is reachable.
 
-    This handles the Flask blueprint pattern where:
-    - `import blueprints` makes the package reachable
-    - `from blueprints import booking_form` is unused (code uses blueprints.booking_form)
-    - But booking_form is still accessible at runtime via blueprints.booking_form
+    This handles patterns where:
+    - `import pkg` makes the package reachable
+    - `from pkg import submodule` is unused (code uses pkg.submodule instead)
+    - But submodule is still accessible at runtime via pkg.submodule
     """
     with tempfile.TemporaryDirectory() as tmpdir:
         root = Path(tmpdir).resolve()
