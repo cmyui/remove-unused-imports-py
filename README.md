@@ -1,8 +1,8 @@
-# remove-unused-imports
+# import-analyzer-py
 
-[![build status](https://github.com/cmyui/remove-unused-imports-py/actions/workflows/ci.yml/badge.svg)](https://github.com/cmyui/remove-unused-imports-py/actions/workflows/ci.yml)
+[![build status](https://github.com/cmyui/import-analyzer-py/actions/workflows/ci.yml/badge.svg)](https://github.com/cmyui/import-analyzer-py/actions/workflows/ci.yml)
 
-A Python linter that detects and automatically removes unused imports.
+A Python import analyzer with cross-file analysis, unused import detection, circular import warnings, and autofix.
 
 ## Comparison with Other Tools
 
@@ -61,14 +61,14 @@ Based on analysis of other tools' source code:
 ## Installation
 
 ```bash
-pip install remove-unused-imports
+pip install import-analyzer
 ```
 
 Or install from source:
 
 ```bash
-git clone https://github.com/cmyui/remove-unused-imports-py
-cd remove-unused-imports-py
+git clone https://github.com/cmyui/import-analyzer-py
+cd import-analyzer-py
 pip install .
 ```
 
@@ -80,25 +80,25 @@ Cross-file mode follows imports from an entry point and tracks re-exports across
 
 ```bash
 # Analyze from entry point (follows imports)
-remove-unused-imports main.py
+import-analyzer main.py
 
 # Analyze entire directory
-remove-unused-imports src/
+import-analyzer src/
 
 # Fix all unused imports (including cascaded ones)
-remove-unused-imports --fix main.py
+import-analyzer --fix main.py
 
 # Warn about implicit re-exports (imports used by other files but not in __all__)
-remove-unused-imports --warn-implicit-reexports main.py
+import-analyzer --warn-implicit-reexports main.py
 
 # Warn about circular imports
-remove-unused-imports --warn-circular main.py
+import-analyzer --warn-circular main.py
 
 # Warn about files that become unreachable after fixing
-remove-unused-imports --warn-unreachable main.py
+import-analyzer --warn-unreachable main.py
 
 # Quiet mode (summary only)
-remove-unused-imports -q main.py
+import-analyzer -q main.py
 ```
 
 ### Single-file mode
@@ -107,10 +107,10 @@ For simple use cases or when you want to analyze files independently:
 
 ```bash
 # Check files independently (no cross-file tracking)
-remove-unused-imports --single-file myfile.py
+import-analyzer --single-file myfile.py
 
 # Check multiple files
-remove-unused-imports --single-file src/*.py
+import-analyzer --single-file src/*.py
 ```
 
 ### Exit codes
@@ -200,7 +200,7 @@ from utils import List
 x: List[int] = []
 ```
 
-Running `remove-unused-imports main.py` correctly preserves the `List` import in `utils.py` because it's used by `main.py`.
+Running `import-analyzer main.py` correctly preserves the `List` import in `utils.py` because it's used by `main.py`.
 
 ### Cascade detection example
 
@@ -215,7 +215,7 @@ from utils import List    # becomes unused when main.py's import is removed
 from typing import List   # becomes unused when helpers.py's import is removed
 ```
 
-Running `remove-unused-imports --fix main.py` removes all three imports in a single pass.
+Running `import-analyzer --fix main.py` removes all three imports in a single pass.
 
 ### noqa comments
 
@@ -247,8 +247,8 @@ from typing import (
 ### Setup
 
 ```bash
-git clone https://github.com/cmyui/remove-unused-imports-py
-cd remove-unused-imports-py
+git clone https://github.com/cmyui/import-analyzer-py
+cd import-analyzer-py
 python -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
@@ -271,7 +271,7 @@ tox -e py
 
 ```
 .
-├── remove_unused_imports/
+├── import_analyzer/
 │   ├── __init__.py          # Public API exports
 │   ├── __main__.py          # Entry point for python -m
 │   ├── _main.py             # CLI and orchestration

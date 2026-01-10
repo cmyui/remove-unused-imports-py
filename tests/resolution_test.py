@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from remove_unused_imports._resolution import ModuleResolver
-from remove_unused_imports._resolution import get_external_modules
+from import_analyzer._resolution import ModuleResolver
+from import_analyzer._resolution import get_external_modules
 
 # =============================================================================
 # get_external_modules tests

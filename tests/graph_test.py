@@ -7,9 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from remove_unused_imports._graph import ImportGraph
-from remove_unused_imports._graph import build_import_graph
-from remove_unused_imports._graph import build_import_graph_from_directory
+from import_analyzer._graph import ImportGraph
+from import_analyzer._graph import build_import_graph
+from import_analyzer._graph import build_import_graph_from_directory
 
 # =============================================================================
 # ImportGraph tests
@@ -18,7 +18,7 @@ from remove_unused_imports._graph import build_import_graph_from_directory
 
 def test_import_graph_add_and_get_node():
     """Should add and retrieve nodes."""
-    from remove_unused_imports._data import ModuleInfo
+    from import_analyzer._data import ModuleInfo
 
     graph = ImportGraph()
     path = Path("/test/module.py")
@@ -35,7 +35,7 @@ def test_import_graph_add_and_get_node():
 
 def test_import_graph_add_and_get_edge():
     """Should add and retrieve edges."""
-    from remove_unused_imports._data import ImportEdge
+    from import_analyzer._data import ImportEdge
 
     graph = ImportGraph()
     importer = Path("/test/a.py")

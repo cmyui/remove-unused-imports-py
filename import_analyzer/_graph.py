@@ -6,12 +6,12 @@ from collections import defaultdict
 from collections import deque
 from pathlib import Path
 
-from remove_unused_imports._ast_helpers import ImportExtractor
-from remove_unused_imports._ast_helpers import collect_dunder_all_names
-from remove_unused_imports._data import ImportEdge
-from remove_unused_imports._data import ImportInfo
-from remove_unused_imports._data import ModuleInfo
-from remove_unused_imports._resolution import ModuleResolver
+from import_analyzer._ast_helpers import ImportExtractor
+from import_analyzer._ast_helpers import collect_dunder_all_names
+from import_analyzer._data import ImportEdge
+from import_analyzer._data import ImportInfo
+from import_analyzer._data import ModuleInfo
+from import_analyzer._resolution import ModuleResolver
 
 # Directories to skip when scanning for Python files
 _SKIP_DIRS = frozenset({

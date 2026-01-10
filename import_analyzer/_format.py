@@ -4,10 +4,10 @@ from __future__ import annotations
 from collections import defaultdict
 from pathlib import Path
 
-from remove_unused_imports._cross_file import CrossFileResult
-from remove_unused_imports._data import ImplicitReexport
-from remove_unused_imports._data import ImportInfo
-from remove_unused_imports._data import is_under_path
+from import_analyzer._cross_file import CrossFileResult
+from import_analyzer._data import ImplicitReexport
+from import_analyzer._data import ImportInfo
+from import_analyzer._data import is_under_path
 
 # Box drawing characters for nicer output
 HORIZONTAL = "─"

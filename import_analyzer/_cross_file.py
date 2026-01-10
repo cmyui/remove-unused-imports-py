@@ -7,11 +7,11 @@ from dataclasses import dataclass
 from dataclasses import field
 from pathlib import Path
 
-from remove_unused_imports._ast_helpers import collect_dunder_all_names
-from remove_unused_imports._data import ImplicitReexport
-from remove_unused_imports._data import ImportInfo
-from remove_unused_imports._detection import find_unused_imports
-from remove_unused_imports._graph import ImportGraph
+from import_analyzer._ast_helpers import collect_dunder_all_names
+from import_analyzer._data import ImplicitReexport
+from import_analyzer._data import ImportInfo
+from import_analyzer._detection import find_unused_imports
+from import_analyzer._graph import ImportGraph
 
 
 @dataclass

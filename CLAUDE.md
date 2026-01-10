@@ -31,14 +31,14 @@ This is a multi-module Python linter that detects and autofixes unused imports u
 ### Package Structure
 
 ```
-remove_unused_imports/
+import_analyzer/
   __init__.py          # Public API exports
-  __main__.py          # Entry point for `python -m remove_unused_imports`
+  __main__.py          # Entry point for `python -m import_analyzer`
   _main.py             # CLI and orchestration (main, check_file, check_cross_file)
   _data.py             # Data classes (ImportInfo, ModuleInfo, ImportEdge, etc.)
   _ast_helpers.py      # AST visitors (ImportExtractor, NameUsageCollector, etc.)
   _detection.py        # Single-file detection logic (find_unused_imports)
-  _autofix.py          # Autofix logic (remove_unused_imports)
+  _autofix.py          # Autofix logic (import_analyzer)
   _resolution.py       # Module resolution (resolves import statements to file paths)
   _graph.py            # Import graph construction (builds dependency graph from entry point)
   _cross_file.py       # Cross-file analysis with cascade detection
@@ -71,7 +71,7 @@ remove_unused_imports/
 - noqa keyword is case-insensitive, but codes are case-sensitive
 - Handles noqa on multi-line imports (per-alias line) and backslash continuations
 
-**`_autofix.py`**: Contains `remove_unused_imports()` which:
+**`_autofix.py`**: Contains `import_analyzer()` which:
 - Partial removal from multi-import statements
 - Inserts `pass` when removing imports would leave a block empty
 - Handles semicolon-separated statements with surgical removal

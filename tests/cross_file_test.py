@@ -7,10 +7,10 @@ from pathlib import Path
 
 import pytest
 
-from remove_unused_imports._cross_file import analyze_cross_file
-from remove_unused_imports._graph import build_import_graph
-from remove_unused_imports._graph import build_import_graph_from_directory
-from remove_unused_imports._main import check_cross_file
+from import_analyzer._cross_file import analyze_cross_file
+from import_analyzer._graph import build_import_graph
+from import_analyzer._graph import build_import_graph_from_directory
+from import_analyzer._main import check_cross_file
 
 # =============================================================================
 # Re-export detection tests

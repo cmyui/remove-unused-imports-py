@@ -4,14 +4,14 @@ import argparse
 import sys
 from pathlib import Path
 
-from remove_unused_imports._autofix import remove_unused_imports
-from remove_unused_imports._cross_file import analyze_cross_file
-from remove_unused_imports._data import ImportInfo
-from remove_unused_imports._data import is_under_path
-from remove_unused_imports._detection import find_unused_imports
-from remove_unused_imports._format import format_cross_file_results
-from remove_unused_imports._graph import build_import_graph
-from remove_unused_imports._graph import build_import_graph_from_directory
+from import_analyzer._autofix import import_analyzer
+from import_analyzer._cross_file import analyze_cross_file
+from import_analyzer._data import ImportInfo
+from import_analyzer._data import is_under_path
+from import_analyzer._detection import find_unused_imports
+from import_analyzer._format import format_cross_file_results
+from import_analyzer._graph import build_import_graph
+from import_analyzer._graph import build_import_graph_from_directory
 
 
 def check_file(filepath: Path, fix: bool = False) -> tuple[int, list[str]]:
@@ -41,7 +41,7 @@ def check_file(filepath: Path, fix: bool = False) -> tuple[int, list[str]]:
         messages.append(msg)
 
     if fix:
-        new_source = remove_unused_imports(source, unused)
+        new_source = import_analyzer(source, unused)
         if new_source != source:
             filepath.write_text(new_source)
             messages.append(
@@ -134,7 +134,7 @@ def _fix_file_silent(
     except (OSError, UnicodeDecodeError):
         return 0
 
-    new_source = remove_unused_imports(source, unused)
+    new_source = import_analyzer(source, unused)
     if new_source != source:
         file_path.write_text(new_source)
         return len(unused)

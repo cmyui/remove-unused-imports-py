@@ -6,7 +6,7 @@ from dataclasses import field
 from enum import Enum
 from enum import auto
 
-from remove_unused_imports._data import ImportInfo
+from import_analyzer._data import ImportInfo
 
 # =============================================================================
 # Scope Analysis Infrastructure

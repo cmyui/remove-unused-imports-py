@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import ast
 
-from remove_unused_imports._data import ImportInfo
+from import_analyzer._data import ImportInfo
 
 
 def _find_block_only_imports(
@@ -184,7 +184,7 @@ def _find_semicolon_removals(
     return removals, lines_to_remove
 
 
-def remove_unused_imports(source: str, unused_imports: list[ImportInfo]) -> str:
+def import_analyzer(source: str, unused_imports: list[ImportInfo]) -> str:
     """Remove unused imports from the source code."""
     if not unused_imports:
         return source

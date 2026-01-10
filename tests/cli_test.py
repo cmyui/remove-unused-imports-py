@@ -7,10 +7,10 @@ from pathlib import Path
 
 import pytest
 
-from remove_unused_imports._main import check_cross_file
-from remove_unused_imports._main import check_file
-from remove_unused_imports._main import collect_python_files
-from remove_unused_imports._main import main
+from import_analyzer._main import check_cross_file
+from import_analyzer._main import check_file
+from import_analyzer._main import collect_python_files
+from import_analyzer._main import main
 
 # =============================================================================
 # check_file edge cases
@@ -194,12 +194,12 @@ def test_main_directory(tmp_path, monkeypatch, capsys):
 
 
 def test_cli_subprocess(tmp_path):
-    """Test running as python -m remove_unused_imports."""
+    """Test running as python -m import_analyzer."""
     test_file = tmp_path / "test.py"
     test_file.write_text("import os\n")
 
     result = subprocess.run(
-        [sys.executable, '-m', 'remove_unused_imports', str(test_file)],
+        [sys.executable, '-m', 'import_analyzer', str(test_file)],
         capture_output=True,
         text=True,
         encoding='utf-8',

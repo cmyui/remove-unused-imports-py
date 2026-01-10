@@ -4,11 +4,11 @@ import ast
 import re
 import sys
 
-from remove_unused_imports._ast_helpers import ImportExtractor
-from remove_unused_imports._ast_helpers import ScopeAwareNameCollector
-from remove_unused_imports._ast_helpers import collect_dunder_all_names
-from remove_unused_imports._ast_helpers import collect_string_annotation_names
-from remove_unused_imports._data import ImportInfo
+from import_analyzer._ast_helpers import ImportExtractor
+from import_analyzer._ast_helpers import ScopeAwareNameCollector
+from import_analyzer._ast_helpers import collect_dunder_all_names
+from import_analyzer._ast_helpers import collect_string_annotation_names
+from import_analyzer._data import ImportInfo
 
 # Pattern to match noqa comments: # noqa or # noqa: F401 or # noqa: F401, E501
 # The "noqa" keyword is case-insensitive, but codes are case-sensitive (matching flake8)

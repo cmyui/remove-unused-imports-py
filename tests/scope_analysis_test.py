@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from remove_unused_imports import find_unused_imports
+from import_analyzer import find_unused_imports
 
 
 def _get_unused_names(source: str) -> set[str]:

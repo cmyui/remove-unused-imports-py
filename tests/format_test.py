@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from remove_unused_imports._cross_file import CrossFileResult
-from remove_unused_imports._data import ImplicitReexport
-from remove_unused_imports._data import ImportInfo
-from remove_unused_imports._format import format_cross_file_results
-from remove_unused_imports._format import make_relative
+from import_analyzer._cross_file import CrossFileResult
+from import_analyzer._data import ImplicitReexport
+from import_analyzer._data import ImportInfo
+from import_analyzer._format import format_cross_file_results
+from import_analyzer._format import make_relative
 
 
 def test_make_relative_when_under_base(tmp_path: Path) -> None:
