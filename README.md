@@ -52,9 +52,16 @@ remove-unused-imports -q src/
   - Default argument values
   - `__all__` exports
 - Skips `__future__` imports (they have side effects)
-- Detects shadowed imports (assignment, function parameters, loop variables, `with` targets, etc.)
-- Full scope analysis (correctly handles function parameters that shadow imports)
-- Autofix safely handles empty blocks by inserting `pass`
+- Full scope analysis with LEGB rule:
+  - Correctly handles function parameters that shadow imports
+  - Handles class scope quirks (class body doesn't enclose nested functions)
+  - Supports comprehension scopes and walrus operator bindings
+  - Respects `global` and `nonlocal` declarations
+- Autofix capabilities:
+  - Safely handles empty blocks by inserting `pass`
+  - Partial removal from multi-import statements
+  - Handles semicolon-separated statements
+  - Handles backslash line continuations
 
 ## Examples
 
@@ -84,7 +91,6 @@ def get_home() -> Optional[Path]:
 ## Known Limitations
 
 - **Star imports ignored**: `from X import *` cannot be analyzed
-- **Semi-colon imports / partial line removals**: These are not supported yet
 
 ## Development
 
@@ -127,10 +133,12 @@ tox -e py
 │   ├── detection_test.py
 │   ├── aliased_imports_test.py
 │   ├── shadowed_imports_test.py
+│   ├── scope_analysis_test.py
 │   ├── special_imports_test.py
 │   ├── type_annotations_test.py
 │   ├── autofix_test.py
-│   └── file_operations_test.py
+│   ├── file_operations_test.py
+│   └── cli_test.py
 ├── pyproject.toml
 ├── tox.ini
 └── .github/workflows/ci.yml

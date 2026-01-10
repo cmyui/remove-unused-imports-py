@@ -47,7 +47,13 @@ remove_unused_imports/
 
 **`_ast_helpers.py`**: AST visitors and helpers:
 - `ImportExtractor`: Collects all imports, tracking bound names, modules, line numbers. Skips `__future__` imports.
-- `NameUsageCollector`: Finds all name usages. Only counts `ast.Load` contexts (not `Store`) for correct shadowing.
+- `ScopeAwareNameCollector`: Main usage collector with full scope analysis:
+  - `ScopeType` enum: MODULE, FUNCTION, CLASS, COMPREHENSION
+  - `Scope` dataclass: tracks bindings and scope type
+  - `ScopeStack`: manages scope chain with `resolves_to_module_scope()` for LEGB lookup
+  - Handles all binding forms: assignments, function params, for/with targets, except handlers, match patterns, walrus operator
+  - Respects `global`/`nonlocal` declarations
+  - Handles class scope quirk (doesn't enclose nested functions)
 - `StringAnnotationVisitor`: Parses string literals as type annotations for forward references.
 - `collect_dunder_all_names`: Extracts names from `__all__` so exports aren't flagged.
 
@@ -56,6 +62,8 @@ remove_unused_imports/
 **`_autofix.py`**: Contains `remove_unused_imports()` which:
 - Partial removal from multi-import statements (`from X import a, b, c` → `from X import a`)
 - Inserts `pass` when removing imports would leave a block empty
+- Handles semicolon-separated statements with surgical removal
+- Handles backslash line continuations
 
 **`_main.py`**: CLI entry point and file handling (`main`, `check_file`, `collect_python_files`).
 
