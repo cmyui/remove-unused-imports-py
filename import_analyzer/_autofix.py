@@ -586,12 +586,18 @@ def fix_indirect_imports(
 
 
 def _find_last_import_line(tree: ast.AST) -> int:
-    """Find the line number after the last import statement."""
+    """Find the line number after the last module-level import statement.
+
+    Only considers imports at the module level, not function-local imports.
+    """
     last_import_line = 0
-    for node in ast.walk(tree):
-        if isinstance(node, (ast.Import, ast.ImportFrom)):
-            end_line = node.end_lineno or node.lineno
-            last_import_line = max(last_import_line, end_line)
+    # Only iterate over direct children of the module (module-level statements)
+    # to avoid finding function-local imports
+    if isinstance(tree, ast.Module):
+        for node in tree.body:
+            if isinstance(node, (ast.Import, ast.ImportFrom)):
+                end_line = node.end_lineno or node.lineno
+                last_import_line = max(last_import_line, end_line)
     return last_import_line
 
 

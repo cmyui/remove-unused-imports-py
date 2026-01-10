@@ -239,19 +239,22 @@ def _fix_indirect_imports(
         new_source = source
         fix_count = 0
 
-        # Apply indirect import fixes
-        if file_path in imports_by_file:
-            file_indirect = imports_by_file[file_path]
-            new_source = fix_indirect_imports(new_source, file_indirect, module_names)
-            fix_count += len(file_indirect)
-
-        # Apply indirect attr access fixes
+        # Apply indirect attr access fixes FIRST
+        # These add new imports after the last import line, preserving original import line numbers
         if file_path in attrs_by_file:
             file_attrs = attrs_by_file[file_path]
             new_source = fix_indirect_attr_accesses(
                 new_source, file_attrs, module_names,
             )
             fix_count += len(file_attrs)
+
+        # Apply indirect import fixes SECOND
+        # These modify existing import statements, so they work correctly
+        # after attr fixes have added new imports
+        if file_path in imports_by_file:
+            file_indirect = imports_by_file[file_path]
+            new_source = fix_indirect_imports(new_source, file_indirect, module_names)
+            fix_count += len(file_indirect)
 
         if new_source != source:
             file_path.write_text(new_source)
