@@ -20,18 +20,40 @@ pip install .
 
 ## Usage
 
-```bash
-# Check a single file
-remove-unused-imports myfile.py
+### Cross-file mode (default)
 
-# Check a directory recursively
+Cross-file mode follows imports from an entry point and tracks re-exports across your codebase. This prevents false positives when imports are used by other files.
+
+```bash
+# Analyze from entry point (follows imports)
+remove-unused-imports main.py
+
+# Analyze entire directory
 remove-unused-imports src/
 
-# Automatically fix unused imports
-remove-unused-imports --fix myfile.py
+# Fix all unused imports (including cascaded ones)
+remove-unused-imports --fix main.py
+
+# Warn about implicit re-exports (imports used by other files but not in __all__)
+remove-unused-imports --warn-implicit-reexports main.py
+
+# Warn about circular imports
+remove-unused-imports --warn-circular main.py
 
 # Quiet mode (summary only)
-remove-unused-imports -q src/
+remove-unused-imports -q main.py
+```
+
+### Single-file mode
+
+For simple use cases or when you want to analyze files independently:
+
+```bash
+# Check files independently (no cross-file tracking)
+remove-unused-imports --single-file myfile.py
+
+# Check multiple files
+remove-unused-imports --single-file src/*.py
 ```
 
 ### Exit codes
@@ -42,6 +64,15 @@ remove-unused-imports -q src/
 | 1    | Unused imports found                          |
 
 ## Features
+
+### Cross-file analysis
+
+- **Re-export tracking**: Imports used by other files are preserved
+- **Cascade detection**: Finds all unused imports in a single pass, even when removing one exposes another
+- **Circular import detection**: Warns about import cycles
+- **Implicit re-export warnings**: Identifies re-exports missing from `__all__`
+
+### Single-file analysis
 
 - Detects unused `import X` and `from X import Y` statements
 - Handles aliased imports (`import X as Y`, `from X import Y as Z`)
@@ -57,16 +88,19 @@ remove-unused-imports -q src/
   - Handles class scope quirks (class body doesn't enclose nested functions)
   - Supports comprehension scopes and walrus operator bindings
   - Respects `global` and `nonlocal` declarations
-- Autofix capabilities:
-  - Safely handles empty blocks by inserting `pass`
-  - Partial removal from multi-import statements
-  - Handles semicolon-separated statements
-  - Handles backslash line continuations
+
+### Autofix
+
+- Safely handles empty blocks by inserting `pass`
+- Partial removal from multi-import statements
+- Handles semicolon-separated statements
+- Handles backslash line continuations
 
 ## Examples
 
-### Before
+### Single-file example
 
+Before:
 ```python
 import os
 import sys  # unused
@@ -77,8 +111,7 @@ def get_home() -> Optional[Path]:
     return Path(os.environ.get("HOME"))
 ```
 
-### After (`--fix`)
-
+After (`--fix`):
 ```python
 import os
 from typing import Optional
@@ -88,9 +121,39 @@ def get_home() -> Optional[Path]:
     return Path(os.environ.get("HOME"))
 ```
 
+### Cross-file re-export example
+
+```python
+# utils.py
+from typing import List  # NOT unused - re-exported to main.py
+
+# main.py
+from utils import List
+x: List[int] = []
+```
+
+Running `remove-unused-imports main.py` correctly preserves the `List` import in `utils.py` because it's used by `main.py`.
+
+### Cascade detection example
+
+```python
+# main.py
+from helpers import List  # unused - not used locally
+
+# helpers.py
+from utils import List    # becomes unused when main.py's import is removed
+
+# utils.py
+from typing import List   # becomes unused when helpers.py's import is removed
+```
+
+Running `remove-unused-imports --fix main.py` removes all three imports in a single pass.
+
 ## Known Limitations
 
-- **Star imports ignored**: `from X import *` cannot be analyzed
+- **Star imports**: `from X import *` cannot be analyzed statically
+- **Dynamic imports**: `importlib.import_module()` calls are not tracked
+- **Namespace packages**: PEP 420 namespace packages are not supported
 
 ## Development
 
@@ -125,10 +188,14 @@ tox -e py
 │   ├── __init__.py          # Public API exports
 │   ├── __main__.py          # Entry point for python -m
 │   ├── _main.py             # CLI and orchestration
-│   ├── _data.py             # Data classes
-│   ├── _ast_helpers.py      # AST visitors
-│   ├── _detection.py        # Detection logic
-│   └── _autofix.py          # Autofix logic
+│   ├── _data.py             # Data classes (ImportInfo, ModuleInfo, etc.)
+│   ├── _ast_helpers.py      # AST visitors for import/usage collection
+│   ├── _detection.py        # Single-file detection logic
+│   ├── _autofix.py          # Autofix logic
+│   ├── _resolution.py       # Module resolution (resolves imports to files)
+│   ├── _graph.py            # Import graph construction
+│   ├── _cross_file.py       # Cross-file analysis with cascade detection
+│   └── _format.py           # Output formatting
 ├── tests/
 │   ├── detection_test.py
 │   ├── aliased_imports_test.py
@@ -138,7 +205,11 @@ tox -e py
 │   ├── type_annotations_test.py
 │   ├── autofix_test.py
 │   ├── file_operations_test.py
-│   └── cli_test.py
+│   ├── cli_test.py
+│   ├── resolution_test.py   # Module resolution tests
+│   ├── graph_test.py        # Import graph tests
+│   ├── cross_file_test.py   # Cross-file analysis tests
+│   └── format_test.py       # Output formatting tests
 ├── pyproject.toml
 ├── tox.ini
 └── .github/workflows/ci.yml
