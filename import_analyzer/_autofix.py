@@ -609,7 +609,7 @@ def fix_indirect_attr_accesses(
     """Rewrite indirect attribute accesses to use direct sources.
 
     This involves:
-    1. Adding new import statements for original sources
+    1. Adding new import statements at the same location as the original import
     2. Rewriting all usage sites (module.attr.chain -> new_module.original_name)
 
     Note: Removing the now-unused original import is handled by the
@@ -630,15 +630,17 @@ def fix_indirect_attr_accesses(
             import logger
             logger.LOGGER.info("hello")
 
-    Example (nested):
+    Example (function-local):
         Before:
-            import pkg
-            pkg.internal.LOGGER.info("hello")
+            def foo():
+                import models
+                models.LOGGER.info("hello")
 
         After:
-            import pkg
-            import logger
-            logger.LOGGER.info("hello")
+            def foo():
+                import models
+                import logger
+                logger.LOGGER.info("hello")
     """
     if not indirect_accesses:
         return source
@@ -647,14 +649,25 @@ def fix_indirect_attr_accesses(
 
     # Build replacements: (lineno, col_start, old_text, new_text)
     replacements: list[tuple[int, int, str, str]] = []
-    new_imports: set[str] = set()
+    # Group new imports by their insertion point (after the original import)
+    # Key: (import_lineno, indent_str), Value: set of module names
+    imports_by_location: dict[tuple[int, str], set[str]] = defaultdict(set)
 
     for acc in indirect_accesses:
         target_module = module_names.get(acc.original_source)
         if not target_module:
             continue
 
-        new_imports.add(target_module)
+        # Get indentation from the original import line
+        import_line_idx = acc.import_lineno - 1
+        if import_line_idx < len(lines):
+            original_line = lines[import_line_idx]
+            indent = len(original_line) - len(original_line.lstrip())
+            indent_str = " " * indent
+        else:
+            indent_str = ""
+
+        imports_by_location[(acc.import_lineno, indent_str)].add(target_module)
 
         for lineno, col_offset in acc.usages:
             # Build the old text: import_name.attr_path (e.g., "pkg.internal.LOGGER")
@@ -663,7 +676,7 @@ def fix_indirect_attr_accesses(
             new_prefix = f"{target_module}.{acc.original_name}"
             replacements.append((lineno, col_offset, old_prefix, new_prefix))
 
-    if not replacements and not new_imports:
+    if not replacements and not imports_by_location:
         return source
 
     # Apply replacements in reverse order (bottom-up, right-to-left)
@@ -676,18 +689,18 @@ def fix_indirect_attr_accesses(
             col_end = col_start + len(old_text)
             lines[line_idx] = line[:col_start] + new_text + line[col_end:]
 
-    # Insert new imports after existing imports
     result = "".join(lines)
-    tree = ast.parse(result)
-    insert_line = _find_last_import_line(tree)
-
     result_lines = result.splitlines(keepends=True)
 
-    # Build import lines with proper indentation (at module level, no indent)
-    new_import_lines = [f"import {mod}\n" for mod in sorted(new_imports)]
+    # Insert new imports after their corresponding original imports
+    # Process in reverse order of line numbers to preserve line indices
+    sorted_locations = sorted(imports_by_location.keys(), key=lambda x: x[0], reverse=True)
 
-    # Insert all new imports at the insertion point
-    for new_line in reversed(new_import_lines):
-        result_lines.insert(insert_line, new_line)
+    for import_lineno, indent_str in sorted_locations:
+        modules = imports_by_location[(import_lineno, indent_str)]
+        # Insert right after the original import line
+        insert_idx = import_lineno  # import_lineno is 1-based, so this is after the line
+        for mod in sorted(modules, reverse=True):
+            result_lines.insert(insert_idx, f"{indent_str}import {mod}\n")
 
     return "".join(result_lines)

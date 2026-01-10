@@ -456,14 +456,30 @@ class CrossFileAnalyzer:
             if not imported_module:
                 continue
 
+            importer_module = self.graph.nodes.get(edge.importer)
+            if not importer_module:
+                continue
+
+            # Build mapping from local name to original name for this importer's imports
+            # e.g., "from models import LOG as LOGGER" -> {"LOGGER": "LOG"}
+            local_to_original: dict[str, str] = {}
+            for imp in importer_module.imports:
+                if imp.is_from_import and imp.module == edge.module_name:
+                    local_to_original[imp.name] = imp.original_name
+
             # For each name imported from this module
-            for name in edge.names:
+            for local_name in edge.names:
+                # Get the original name (what's actually in the imported module)
+                # For aliased imports like "from X import Y as Z", local_name is Z
+                # and we need Y to look up in the imported module
+                name_in_module = local_to_original.get(local_name, local_name)
+
                 # Check if this name is a re-export (import, not definition)
-                if name in imported_module.defined_names:
+                if name_in_module in imported_module.defined_names:
                     continue  # Defined here, not indirect
 
                 # Find where this module got the name from (and original name)
-                trace_result = self._trace_import_source(edge.imported, name)
+                trace_result = self._trace_import_source(edge.imported, name_in_module)
                 if trace_result is None:
                     continue  # Can't trace
                 original_source, original_name = trace_result
@@ -480,12 +496,14 @@ class CrossFileAnalyzer:
                     continue  # Skip same-package re-exports by default
 
                 # Find the line number for this import
-                lineno = self._find_import_lineno(edge.importer, edge.imported, name)
+                lineno = self._find_import_lineno(
+                    edge.importer, edge.imported, local_name,
+                )
 
                 results.append(
                     IndirectImport(
                         file=edge.importer,
-                        name=name,
+                        name=local_name,
                         original_name=original_name,
                         lineno=lineno,
                         current_source=edge.imported,

@@ -1385,6 +1385,44 @@ def test_indirect_import_no_alias_needed():
         assert "as CONFIG" not in app_content  # No alias needed
 
 
+def test_fix_indirect_from_import_preserves_function_scope():
+    """from-import fixes inside functions should stay inside the function."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        root = Path(tmpdir).resolve()
+
+        # logger.py defines LOGGER
+        (root / "logger.py").write_text("LOGGER = 'my logger'\n")
+
+        # models.py re-exports LOGGER as LOG, defines MODEL
+        (root / "models.py").write_text(
+            "from logger import LOGGER as LOG\n" "MODEL = 'my model'\n",
+        )
+
+        # app.py has function-local import with alias
+        (root / "app.py").write_text(
+            "def f():\n"
+            "    from models import LOG as LOGGER, MODEL\n"
+            "    LOGGER, MODEL\n",
+        )
+
+        # Run fix
+        check_cross_file(root / "app.py", fix_indirect=True, strict_indirect_imports=True)
+
+        # Verify the fix
+        app_content = (root / "app.py").read_text()
+
+        # New import should be inside the function (same scope)
+        assert "from logger import LOGGER" in app_content
+        assert "from models import MODEL" in app_content
+
+        # Both imports should be indented (inside function)
+        lines = app_content.splitlines()
+        logger_line = next(line for line in lines if "from logger import" in line)
+        models_line = next(line for line in lines if "from models import" in line)
+        assert logger_line.startswith("    ")  # indented
+        assert models_line.startswith("    ")  # indented
+
+
 # =============================================================================
 # Indirect attribute access detection tests
 # =============================================================================
@@ -2002,7 +2040,7 @@ def test_indirect_attr_access_nested_with_file_submodule():
 
 
 def test_fix_indirect_attr_access_with_function_local_import():
-    """Function-local imports should be fixed with module-level import added."""
+    """Function-local import X + X.attr should have new import in same scope."""
     with tempfile.TemporaryDirectory() as tmpdir:
         root = Path(tmpdir).resolve()
 
@@ -2027,15 +2065,14 @@ def test_fix_indirect_attr_access_with_function_local_import():
         # Verify the fix
         app_content = (root / "app.py").read_text()
 
-        # New import should be added at module level
+        # New import should be added inside the function (same scope as original)
         assert "import logger" in app_content
         # Usage should be rewritten
         assert "logger.LOGGER" in app_content
-        # The import logger should be at the top (before def foo)
+        # The import logger should be inside the function (indented)
         lines = app_content.splitlines()
-        import_line = next(i for i, l in enumerate(lines) if "import logger" in l)
-        def_line = next(i for i, l in enumerate(lines) if "def foo" in l)
-        assert import_line < def_line
+        logger_import_line = next(line for line in lines if "import logger" in line)
+        assert logger_import_line.startswith("    ")  # indented inside function
 
 
 def test_fix_indirect_attr_with_file_containing_local_imports():
@@ -2124,3 +2161,39 @@ def test_fix_indirect_imports_with_split_imports():
 
         # Verify the attr access was fixed
         assert "logger.LOGGER" in app_content
+
+
+def test_fix_indirect_attr_access_preserves_class_scope():
+    """import X + X.attr fixes inside class bodies should stay inside the class."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        root = Path(tmpdir).resolve()
+
+        # logger.py defines LOGGER
+        (root / "logger.py").write_text("LOGGER = 'my logger'\n")
+
+        # models/__init__.py re-exports LOGGER
+        models = root / "models"
+        models.mkdir()
+        (models / "__init__.py").write_text("from logger import LOGGER\n")
+
+        # app.py has class-body import models + models.LOGGER usage
+        (root / "app.py").write_text(
+            "class MyClass:\n"
+            "    import models\n"
+            "    log = models.LOGGER\n",
+        )
+
+        # Run fix
+        check_cross_file(root / "app.py", fix_indirect=True, strict_indirect_imports=True)
+
+        # Verify the fix
+        app_content = (root / "app.py").read_text()
+
+        # New import should be inside the class (same scope as original)
+        assert "import logger" in app_content
+        assert "logger.LOGGER" in app_content
+
+        # The new import should be indented (inside class)
+        lines = app_content.splitlines()
+        logger_import_line = next(line for line in lines if line.strip() == "import logger")
+        assert logger_import_line.startswith("    ")  # indented inside class
