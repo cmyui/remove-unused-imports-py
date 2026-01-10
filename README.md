@@ -87,11 +87,21 @@ remove-unused-imports --single-file src/*.py
   - Default argument values
   - `__all__` exports
 - Skips `__future__` imports (they have side effects)
+- Respects `# noqa: F401` comments (matches flake8 behavior)
 - Full scope analysis with LEGB rule:
   - Correctly handles function parameters that shadow imports
   - Handles class scope quirks (class body doesn't enclose nested functions)
   - Supports comprehension scopes and walrus operator bindings
   - Respects `global` and `nonlocal` declarations
+
+### Directory exclusions
+
+The tool automatically skips common non-source directories:
+- Virtual environments: `.venv`, `venv`, `.env`, `env`
+- Build artifacts: `build`, `dist`, `*.egg-info`
+- Cache directories: `__pycache__`, `.mypy_cache`, `.pytest_cache`, `.ruff_cache`
+- Version control: `.git`, `.hg`, `.svn`
+- Other: `node_modules`, `.tox`, `.nox`, `.eggs`
 
 ### Autofix
 
@@ -152,6 +162,25 @@ from typing import List   # becomes unused when helpers.py's import is removed
 ```
 
 Running `remove-unused-imports --fix main.py` removes all three imports in a single pass.
+
+### noqa comments
+
+The tool respects `# noqa` comments matching flake8 behavior:
+
+```python
+import os  # noqa: F401  - kept (F401 = unused import)
+import sys  # noqa       - kept (bare noqa suppresses all)
+import re  # noqa: E501  - flagged (wrong code)
+```
+
+For multi-line imports, noqa applies per-line:
+
+```python
+from typing import (
+    List,  # noqa: F401  - kept
+    Dict,  # flagged (no noqa)
+)
+```
 
 ## Known Limitations
 

@@ -67,6 +67,9 @@ remove_unused_imports/
 - `collect_dunder_all_names`: Extracts names from `__all__` so exports aren't flagged.
 
 **`_detection.py`**: Contains `find_unused_imports()` for single-file analysis.
+- Respects `# noqa: F401` comments (matches flake8 behavior)
+- noqa keyword is case-insensitive, but codes are case-sensitive
+- Handles noqa on multi-line imports (per-alias line) and backslash continuations
 
 **`_autofix.py`**: Contains `remove_unused_imports()` which:
 - Partial removal from multi-import statements
@@ -84,8 +87,9 @@ remove_unused_imports/
 - `ImportGraph`: Nodes (files) and edges (imports)
 - `build_import_graph()`: BFS from entry point, following imports
 - `build_import_graph_from_directory()`: Analyzes all files in directory
-- `find_cycles()`: Detects circular import chains (Tarjan's algorithm)
+- `find_cycles()`: Detects circular import chains (Tarjan's algorithm for SCCs)
 - **Submodule traversal**: Handles `from pkg import submod` where submod isn't in `pkg/__init__.py`
+- **Directory exclusions**: Skips `.venv`, `node_modules`, `__pycache__`, `.git`, `build`, `dist`, etc.
 
 **`_cross_file.py`**: Cross-file analysis:
 - `CrossFileAnalyzer`: Main analyzer class
