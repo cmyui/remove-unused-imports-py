@@ -53,6 +53,7 @@ This project uses:
 - **autopep8** for formatting
 - **flake8** for linting
 - **mypy** for type checking
+- **import-analyzer-py** for import management
 
 All of these run automatically via pre-commit:
 
