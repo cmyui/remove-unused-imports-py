@@ -88,6 +88,19 @@ repos:
       # - id: import-analyzer-single-file
 ```
 
+The cross-file hook runs with all features enabled by default:
+`--fix --warn-implicit-reexports --warn-circular --warn-unreachable`
+
+To customize:
+
+```yaml
+hooks:
+  - id: import-analyzer
+    args: [.]  # check only, no warnings
+  - id: import-analyzer
+    args: [., --fix]  # fix but no warnings
+```
+
 ## Usage
 
 ### Cross-file mode (default)
