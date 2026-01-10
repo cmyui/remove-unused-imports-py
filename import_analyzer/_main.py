@@ -4,7 +4,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from import_analyzer._autofix import import_analyzer
+from import_analyzer._autofix import remove_unused_imports
 from import_analyzer._cross_file import analyze_cross_file
 from import_analyzer._data import ImportInfo
 from import_analyzer._data import is_under_path
@@ -41,7 +41,7 @@ def check_file(filepath: Path, fix: bool = False) -> tuple[int, list[str]]:
         messages.append(msg)
 
     if fix:
-        new_source = import_analyzer(source, unused)
+        new_source = remove_unused_imports(source, unused)
         if new_source != source:
             filepath.write_text(new_source)
             messages.append(
@@ -134,7 +134,7 @@ def _fix_file_silent(
     except (OSError, UnicodeDecodeError):
         return 0
 
-    new_source = import_analyzer(source, unused)
+    new_source = remove_unused_imports(source, unused)
     if new_source != source:
         file_path.write_text(new_source)
         return len(unused)

@@ -4,7 +4,7 @@ from __future__ import annotations
 import pytest
 
 from import_analyzer import find_unused_imports
-from import_analyzer import import_analyzer
+from import_analyzer import remove_unused_imports
 
 # =============================================================================
 # Basic removal
@@ -56,7 +56,7 @@ from import_analyzer import import_analyzer
 def test_autofix_removal(s, expected):
     """Test basic import removal."""
     unused = find_unused_imports(s)
-    result = import_analyzer(s, unused)
+    result = remove_unused_imports(s, unused)
     assert result == expected
 
 
@@ -89,7 +89,7 @@ def test_autofix_removal(s, expected):
 def test_autofix_partial_removal(s, expected):
     """Test partial removal from multi-name imports."""
     unused = find_unused_imports(s)
-    result = import_analyzer(s, unused)
+    result = remove_unused_imports(s, unused)
     assert result == expected
 
 
@@ -100,7 +100,7 @@ def test_autofix_partial_removal_multiple_kept():
         'x: Dict[str, List[int]]\n'
     )
     unused = find_unused_imports(s)
-    result = import_analyzer(s, unused)
+    result = remove_unused_imports(s, unused)
 
     # Check that Optional is removed and List, Dict are kept (order may vary)
     assert 'Optional' not in result
@@ -183,7 +183,7 @@ def test_autofix_partial_removal_multiple_kept():
 def test_autofix_pass_insertion(s, expected):
     """Test that empty blocks get pass statements."""
     unused = find_unused_imports(s)
-    result = import_analyzer(s, unused)
+    result = remove_unused_imports(s, unused)
     assert result == expected
 
 
@@ -226,7 +226,7 @@ def test_autofix_pass_insertion(s, expected):
 def test_autofix_indentation(s, expected):
     """Test that indentation is preserved during autofix."""
     unused = find_unused_imports(s)
-    result = import_analyzer(s, unused)
+    result = remove_unused_imports(s, unused)
     assert result == expected
 
 
@@ -253,7 +253,7 @@ def test_autofix_indentation(s, expected):
 def test_autofix_multiline(s):
     """Test multiline import handling."""
     unused = find_unused_imports(s)
-    result = import_analyzer(s, unused)
+    result = remove_unused_imports(s, unused)
     # Should have Optional but not List or Dict
     assert 'Optional' in result
     assert 'List' not in result
@@ -290,7 +290,7 @@ def test_autofix_multiline(s):
 def test_autofix_no_changes(s):
     """Test that files with no unused imports are unchanged."""
     unused = find_unused_imports(s)
-    result = import_analyzer(s, unused)
+    result = remove_unused_imports(s, unused)
     assert result == s
 
 
@@ -323,7 +323,7 @@ def test_autofix_no_changes(s):
 def test_autofix_complex(s, expected):
     """Test complex autofix scenarios."""
     unused = find_unused_imports(s)
-    result = import_analyzer(s, unused)
+    result = remove_unused_imports(s, unused)
     assert result == expected
 
 
@@ -446,7 +446,7 @@ def test_autofix_complex(s, expected):
 def test_autofix_pass_insertion_edge_cases(s, expected):
     """Test pass insertion for various block types."""
     unused = find_unused_imports(s)
-    result = import_analyzer(s, unused)
+    result = remove_unused_imports(s, unused)
     assert result == expected
 
 
@@ -467,7 +467,7 @@ def test_autofix_pass_insertion_multiline():
         '    pass\n'
     )
     unused = find_unused_imports(s)
-    result = import_analyzer(s, unused)
+    result = remove_unused_imports(s, unused)
     assert result == expected
 
 
@@ -500,7 +500,7 @@ def test_autofix_pass_insertion_multiline():
 def test_autofix_partial_regular_import(s, expected):
     """Test partial removal from regular import statements."""
     unused = find_unused_imports(s)
-    result = import_analyzer(s, unused)
+    result = remove_unused_imports(s, unused)
     assert result == expected
 
 
@@ -527,7 +527,7 @@ def test_autofix_partial_regular_import(s, expected):
 def test_autofix_multiline_full_removal(s, expected):
     """Test full removal of multi-line imports."""
     unused = find_unused_imports(s)
-    result = import_analyzer(s, unused)
+    result = remove_unused_imports(s, unused)
     assert result == expected
 
 
@@ -560,7 +560,7 @@ def test_autofix_multiline_full_removal(s, expected):
 def test_autofix_relative_imports(s, expected):
     """Test autofix with relative imports."""
     unused = find_unused_imports(s)
-    result = import_analyzer(s, unused)
+    result = remove_unused_imports(s, unused)
     assert result == expected
 
 
@@ -608,7 +608,7 @@ def test_autofix_relative_imports(s, expected):
 def test_autofix_blank_line_cleanup(s, expected):
     """Test blank line cleanup after removal."""
     unused = find_unused_imports(s)
-    result = import_analyzer(s, unused)
+    result = remove_unused_imports(s, unused)
     assert result == expected
 
 
@@ -640,7 +640,7 @@ def test_autofix_blank_line_cleanup(s, expected):
 def test_autofix_block_not_empty(s, expected):
     """Test import removal from blocks that still have other statements."""
     unused = find_unused_imports(s)
-    result = import_analyzer(s, unused)
+    result = remove_unused_imports(s, unused)
     assert result == expected
 
 
@@ -663,7 +663,7 @@ def test_autofix_block_not_empty(s, expected):
 def test_autofix_semicolon_all_unused(s, expected):
     """Test that all-unused imports on same line get removed."""
     unused = find_unused_imports(s)
-    result = import_analyzer(s, unused)
+    result = remove_unused_imports(s, unused)
     assert result == expected
 
 
@@ -699,7 +699,7 @@ def test_autofix_semicolon_all_unused(s, expected):
 def test_autofix_semicolon_surgical_removal(s, expected):
     """Test surgical removal of imports from semicolon-separated lines."""
     unused = find_unused_imports(s)
-    result = import_analyzer(s, unused)
+    result = remove_unused_imports(s, unused)
     assert result == expected
 
 
@@ -753,7 +753,7 @@ def test_autofix_semicolon_surgical_removal(s, expected):
 def test_autofix_semicolon_whitespace_handling(s, expected):
     """Test surgical removal handles various whitespace around semicolons."""
     unused = find_unused_imports(s)
-    result = import_analyzer(s, unused)
+    result = remove_unused_imports(s, unused)
     assert result == expected
 
 
@@ -788,7 +788,7 @@ def test_autofix_semicolon_whitespace_handling(s, expected):
 def test_autofix_backslash_continuation(s, expected):
     """Test removal handles backslash line continuations."""
     unused = find_unused_imports(s)
-    result = import_analyzer(s, unused)
+    result = remove_unused_imports(s, unused)
     assert result == expected
 
 
@@ -797,5 +797,5 @@ def test_autofix_multiline_import_ending_on_semicolon_line():
     s = 'import \\\n    sys; x = 1\n'
     expected = 'x = 1\n'
     unused = find_unused_imports(s)
-    result = import_analyzer(s, unused)
+    result = remove_unused_imports(s, unused)
     assert result == expected

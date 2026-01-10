@@ -24,7 +24,14 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
     "Topic :: Software Development :: Quality Assurance",
+    "Typing :: Typed",
 ]
+keywords = ["imports", "linter", "unused", "autofix", "static-analysis"]
+
+[project.urls]
+Homepage = "https://github.com/cmyui/import-analyzer-py"
+Repository = "https://github.com/cmyui/import-analyzer-py"
+Issues = "https://github.com/cmyui/import-analyzer-py/issues"
 
 [project.scripts]
 import-analyzer = "import_analyzer:main"
@@ -38,6 +45,9 @@ dev = [
 
 [tool.setuptools]
 packages = ["import_analyzer"]
+
+[tool.setuptools.package-data]
+import_analyzer = ["py.typed"]
 
 [tool.coverage.run]
 plugins = ["covdefaults"]
