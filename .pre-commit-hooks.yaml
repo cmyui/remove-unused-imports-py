@@ -1,0 +1,6 @@
+- id: import-analyzer
+  name: import-analyzer
+  description: Detect unused imports with cross-file analysis
+  entry: import-analyzer
+  language: python
+  types: [python]
