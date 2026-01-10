@@ -208,6 +208,27 @@ def test_function_scope_shadowing(s, expected):
             '    return x * 2\n',
             id='import used in decorator',
         ),
+        # Decorator with same name as decorated function
+        # The decorator is evaluated BEFORE the function name is bound,
+        # so this should NOT be flagged as unused.
+        pytest.param(
+            'from sqlalchemy.orm import reconstructor\n'
+            '\n'
+            'class MyModel:\n'
+            '    @reconstructor\n'
+            '    def reconstructor(self):\n'
+            '        pass\n',
+            id='decorator same name as decorated function',
+        ),
+        # Class decorator with same name as decorated class
+        pytest.param(
+            'from dataclasses import dataclass\n'
+            '\n'
+            '@dataclass\n'
+            'class dataclass:\n'
+            '    value: int\n',
+            id='class decorator same name as decorated class',
+        ),
         # Import used in nested function (closure)
         pytest.param(
             'from operator import add\n'

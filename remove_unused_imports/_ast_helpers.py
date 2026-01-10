@@ -202,12 +202,14 @@ class ScopeAwareNameCollector(ast.NodeVisitor):
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
         """Handle function definitions."""
-        # 1. Bind function name in CURRENT scope
-        self._add_binding_with_shadow_tracking(node.name)
-
-        # 2. Visit decorators in CURRENT scope
+        # 1. Visit decorators in CURRENT scope FIRST
+        # Decorators are evaluated before the function name is bound,
+        # so @foo must resolve before `def foo` creates a binding.
         for decorator in node.decorator_list:
             self.visit(decorator)
+
+        # 2. Bind function name in CURRENT scope
+        self._add_binding_with_shadow_tracking(node.name)
 
         # 3. Visit annotations and defaults in CURRENT scope
         self._visit_function_annotations_and_defaults(node)
@@ -227,9 +229,10 @@ class ScopeAwareNameCollector(ast.NodeVisitor):
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
         """Handle async function definitions (same as sync)."""
-        self._add_binding_with_shadow_tracking(node.name)
+        # Visit decorators FIRST, before binding function name
         for decorator in node.decorator_list:
             self.visit(decorator)
+        self._add_binding_with_shadow_tracking(node.name)
         self._visit_function_annotations_and_defaults(node)
         self._scope_stack.push(Scope(ScopeType.FUNCTION, name=node.name))
         self._bind_function_parameters(node.args)
@@ -251,12 +254,13 @@ class ScopeAwareNameCollector(ast.NodeVisitor):
 
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
         """Handle class definitions."""
-        # 1. Bind class name in CURRENT scope
-        self._add_binding_with_shadow_tracking(node.name)
-
-        # 2. Visit decorators in CURRENT scope
+        # 1. Visit decorators in CURRENT scope FIRST
+        # Decorators are evaluated before the class name is bound.
         for decorator in node.decorator_list:
             self.visit(decorator)
+
+        # 2. Bind class name in CURRENT scope
+        self._add_binding_with_shadow_tracking(node.name)
 
         # 3. Visit base classes and keywords in CURRENT scope
         for base in node.bases:
