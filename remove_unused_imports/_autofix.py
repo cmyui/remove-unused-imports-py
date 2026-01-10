@@ -83,27 +83,52 @@ def _find_semicolon_removals(
     tree: ast.AST,
     source: str,
     unused_names: set[str],
-) -> dict[int, list[tuple[int, int]]]:
+) -> tuple[dict[int, list[tuple[int, int]]], set[int]]:
     """Find surgical removal ranges for imports on semicolon lines.
 
-    Returns dict mapping line index to list of (start_col, end_col) ranges
-    to remove from that line.
+    Returns:
+        - dict mapping line index to list of (start_col, end_col) ranges
+          to remove from that line
+        - set of line indices that should be completely removed (preceding
+          lines of multiline imports that end on semicolon lines)
     """
     lines = source.splitlines(keepends=True)
     removals: dict[int, list[tuple[int, int]]] = {}
+    lines_to_remove: set[int] = set()
 
-    # Group all statements by line number, sorted by column
+    # Group all statements by the line where they end
+    # For multiline statements ending on semicolon lines, use the END line
+    # But filter to only include statements that could be semicolon-separated
+    # (statements with content on the same physical line)
     stmts_by_line: dict[int, list[ast.stmt]] = {}
     for node in ast.walk(tree):
         if isinstance(node, ast.stmt) and hasattr(node, 'lineno'):
-            line_idx = node.lineno - 1
+            end_lineno = node.end_lineno or node.lineno
+            # For compound statements (if, for, etc.), skip them as they
+            # contain other statements rather than being semicolon-separated
+            if isinstance(
+                node, (
+                    ast.If, ast.For, ast.AsyncFor, ast.While, ast.With,
+                    ast.AsyncWith, ast.Try, ast.FunctionDef, ast.AsyncFunctionDef,
+                    ast.ClassDef, ast.Match,
+                ),
+            ):
+                continue
+            line_idx = end_lineno - 1
             if line_idx not in stmts_by_line:
                 stmts_by_line[line_idx] = []
             stmts_by_line[line_idx].append(node)
 
-    # Sort statements by column offset
+    # Sort statements by their position on the shared line
+    # For multiline statements, use end_col_offset; for single-line, use col_offset
+    def sort_key(n: ast.stmt) -> int:
+        if n.end_lineno and n.end_lineno != n.lineno:
+            # Multiline statement - sort by where it ends
+            return n.end_col_offset or 0
+        return n.col_offset
+
     for stmts in stmts_by_line.values():
-        stmts.sort(key=lambda n: n.col_offset)
+        stmts.sort(key=sort_key)
 
     for line_idx, stmts in stmts_by_line.items():
         if len(stmts) <= 1:
@@ -148,10 +173,15 @@ def _find_semicolon_removals(
 
             line_removals.append((start_col, end_col))
 
+            # For multiline imports, also mark preceding lines for removal
+            if stmt.lineno != stmt.end_lineno:
+                for remove_line in range(stmt.lineno - 1, (stmt.end_lineno or stmt.lineno) - 1):
+                    lines_to_remove.add(remove_line)
+
         if line_removals:
             removals[line_idx] = line_removals
 
-    return removals
+    return removals, lines_to_remove
 
 
 def remove_unused_imports(source: str, unused_imports: list[ImportInfo]) -> str:
@@ -167,7 +197,9 @@ def remove_unused_imports(source: str, unused_imports: list[ImportInfo]) -> str:
     unused_names = {imp.name for imp in unused_imports}
 
     # Find surgical removals for semicolon lines
-    semicolon_removals = _find_semicolon_removals(tree, source, unused_names)
+    semicolon_removals, semicolon_lines_to_remove = _find_semicolon_removals(
+        tree, source, unused_names,
+    )
 
     # Group unused imports by their statement line
     # For multi-name imports like 'from X import a, b, c', we may only remove some
@@ -176,7 +208,9 @@ def remove_unused_imports(source: str, unused_imports: list[ImportInfo]) -> str:
     for imp in unused_imports:
         line_idx = imp.full_node_lineno - 1
         # Skip imports that will be handled by semicolon removal
-        if line_idx in semicolon_removals:
+        # Check both start and end line (for multiline imports)
+        end_line_idx = (imp.end_lineno or imp.lineno) - 1
+        if line_idx in semicolon_removals or end_line_idx in semicolon_removals:
             continue
         if line_idx not in imports_by_line:
             imports_by_line[line_idx] = []
@@ -216,7 +250,7 @@ def remove_unused_imports(source: str, unused_imports: list[ImportInfo]) -> str:
     needs_pass = _find_block_only_imports(tree, lines_to_fully_remove)
 
     # Determine which lines to remove entirely, modify, or replace with pass
-    lines_to_remove: set[int] = set()
+    lines_to_remove: set[int] = set(semicolon_lines_to_remove)
     lines_to_pass: set[int] = set()  # Replace with 'pass' instead of removing
     lines_to_modify: dict[int, tuple[ast.Import | ast.ImportFrom, list[str]]] = {}
 
@@ -266,11 +300,18 @@ def remove_unused_imports(source: str, unused_imports: list[ImportInfo]) -> str:
                 i += 1
         elif i in lines_to_remove:
             # Skip this line (and find the end of multi-line imports)
+            # But don't skip past lines that need surgical removal
             for node in ast.walk(tree):
                 if isinstance(node, (ast.Import, ast.ImportFrom)):
                     if node.lineno - 1 == i:
                         end_line = node.end_lineno or node.lineno
-                        i = end_line
+                        # Don't skip past semicolon removal lines
+                        end_line_idx = end_line - 1
+                        if end_line_idx in semicolon_removals:
+                            # Stop before the semicolon line
+                            i = end_line_idx
+                        else:
+                            i = end_line
                         break
             else:
                 i += 1
@@ -328,6 +369,42 @@ def remove_unused_imports(source: str, unused_imports: list[ImportInfo]) -> str:
 
     # Remove trailing blank lines that might result from removed imports
     result = "".join(new_lines)
+
+    # Clean up dangling backslash continuations
+    # If a line ends with "\" but the next line was removed, remove the backslash
+    result_lines = result.splitlines(keepends=True)
+    cleaned_backslash: list[str] = []
+    for idx, line in enumerate(result_lines):
+        # Check if this line ends with backslash continuation
+        line_content = line.rstrip('\n\r')
+        if line_content.rstrip(' \t').endswith('\\'):
+            # Check if next line exists and has content (not just whitespace)
+            next_idx = idx + 1
+            if next_idx >= len(result_lines) or not result_lines[next_idx].strip():
+                # Remove the trailing backslash and whitespace/semicolon before it
+                stripped = line_content.rstrip(' \t')[:-1].rstrip(' \t;')
+                if stripped:
+                    cleaned_backslash.append(stripped + '\n')
+                # else: line becomes empty, skip it
+                continue
+        cleaned_backslash.append(line)
+
+    result = "".join(cleaned_backslash)
+
+    # Fix leading whitespace on first non-blank line if it would cause invalid syntax
+    # This can happen when removing imports that had backslash continuations
+    result_lines = result.splitlines(keepends=True)
+    if result_lines:
+        first_content_idx = 0
+        for idx, line in enumerate(result_lines):
+            if line.strip():
+                first_content_idx = idx
+                break
+        first_line = result_lines[first_content_idx]
+        if first_line and first_line[0] in ' \t':
+            # First content line has leading whitespace - strip it
+            result_lines[first_content_idx] = first_line.lstrip()
+        result = "".join(result_lines)
 
     # Clean up multiple consecutive blank lines at the top
     result_lines = result.splitlines(keepends=True)

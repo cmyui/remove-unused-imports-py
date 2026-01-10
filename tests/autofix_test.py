@@ -681,3 +681,47 @@ def test_autofix_semicolon_whitespace_handling(s, expected):
     unused = find_unused_imports(s)
     result = remove_unused_imports(s, unused)
     assert result == expected
+
+
+# =============================================================================
+# Backslash continuation handling
+# =============================================================================
+
+
+@pytest.mark.parametrize(
+    ('s', 'expected'),
+    (
+        # Import with semicolon and backslash continuation
+        pytest.param(
+            'import os; \\\n    x = 1\n',
+            'x = 1\n',
+            id='import semicolon backslash continued',
+        ),
+        # Multiline import statement
+        pytest.param(
+            'import \\\n    os\nx = 1\n',
+            'x = 1\n',
+            id='multiline import statement',
+        ),
+        # Statement then backslash then import
+        pytest.param(
+            'x = 1; \\\nimport os\n',
+            'x = 1\n',
+            id='statement backslash import',
+        ),
+    ),
+)
+def test_autofix_backslash_continuation(s, expected):
+    """Test removal handles backslash line continuations."""
+    unused = find_unused_imports(s)
+    result = remove_unused_imports(s, unused)
+    assert result == expected
+
+
+def test_autofix_multiline_import_ending_on_semicolon_line():
+    """Test multiline import ending on same line as another statement."""
+    s = 'import \\\n    sys; x = 1\n'
+    expected = 'x = 1\n'
+    unused = find_unused_imports(s)
+    result = remove_unused_imports(s, unused)
+    assert result == expected
