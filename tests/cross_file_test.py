@@ -2230,3 +2230,46 @@ def test_fix_indirect_attr_access_preserves_class_scope():
         lines = app_content.splitlines()
         logger_import_line = next(line for line in lines if line.strip() == "import logger")
         assert logger_import_line.startswith("    ")  # indented inside class
+
+
+def test_fix_indirect_attr_access_no_duplicate_imports():
+    """When multiple import statements access attrs from the same source, don't duplicate."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        root = Path(tmpdir).resolve()
+
+        # extensions.py defines db
+        (root / "extensions.py").write_text("db = 'database'\n")
+
+        # models/__init__.py re-exports db
+        models = root / "models"
+        models.mkdir()
+        (models / "__init__.py").write_text("from extensions import db\n")
+
+        # providers/__init__.py also re-exports db
+        providers = root / "providers"
+        providers.mkdir()
+        (providers / "__init__.py").write_text("from extensions import db\n")
+
+        # app.py imports both and uses both .db attrs
+        (root / "app.py").write_text(
+            "import models\n"
+            "import providers\n"
+            "\n"
+            "def foo():\n"
+            "    models.db.execute('query1')\n"
+            "    providers.db.execute('query2')\n",
+        )
+
+        # Run fix
+        check_cross_file(root / "app.py", fix_indirect=True, strict_indirect_imports=True)
+
+        # Verify the fix
+        app_content = (root / "app.py").read_text()
+
+        # Should have exactly ONE `import extensions`, not two
+        assert app_content.count("import extensions") == 1
+
+        # Both usages should be rewritten
+        assert "extensions.db" in app_content
+        assert "models.db" not in app_content or "import models" in app_content
+        assert "providers.db" not in app_content or "import providers" in app_content

@@ -692,12 +692,28 @@ def fix_indirect_attr_accesses(
     result = "".join(lines)
     result_lines = result.splitlines(keepends=True)
 
+    # Deduplicate: each module should only be imported once, at the earliest location
+    # First, find the earliest insertion point for each unique module
+    module_to_location: dict[str, tuple[int, str]] = {}
+    for import_lineno, indent_str in imports_by_location:
+        for mod in imports_by_location[(import_lineno, indent_str)]:
+            if mod not in module_to_location:
+                module_to_location[mod] = (import_lineno, indent_str)
+            elif import_lineno < module_to_location[mod][0]:
+                # Earlier location found
+                module_to_location[mod] = (import_lineno, indent_str)
+
+    # Group by location for insertion
+    location_to_modules: dict[tuple[int, str], set[str]] = defaultdict(set)
+    for mod, location in module_to_location.items():
+        location_to_modules[location].add(mod)
+
     # Insert new imports after their corresponding original imports
     # Process in reverse order of line numbers to preserve line indices
-    sorted_locations = sorted(imports_by_location.keys(), key=lambda x: x[0], reverse=True)
+    sorted_locations = sorted(location_to_modules.keys(), key=lambda x: x[0], reverse=True)
 
     for import_lineno, indent_str in sorted_locations:
-        modules = imports_by_location[(import_lineno, indent_str)]
+        modules = location_to_modules[(import_lineno, indent_str)]
         # Insert right after the original import line
         insert_idx = import_lineno  # import_lineno is 1-based, so this is after the line
         for mod in sorted(modules, reverse=True):
