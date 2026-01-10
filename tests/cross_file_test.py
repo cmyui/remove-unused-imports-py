@@ -243,3 +243,117 @@ def test_partial_reexport():
         assert "List" not in unused_names  # re-exported
         assert "Dict" in unused_names  # not re-exported
         assert "Optional" in unused_names  # not re-exported
+
+
+# =============================================================================
+# Cascade detection tests
+# =============================================================================
+
+
+def test_cascade_unused_when_consumer_removed():
+    """Should cascade unused detection when consumer import is removed.
+
+    When A imports X from B (but doesn't use X), and B imports X from C
+    (only for re-export to A), removing A's import should also mark B's
+    import as unused in a single analysis pass.
+    """
+    with tempfile.TemporaryDirectory() as tmpdir:
+        root = Path(tmpdir).resolve()
+
+        # main.py imports List from helpers but doesn't use it
+        (root / "main.py").write_text(
+            "from helpers import List  # unused!\n" "x = 1\n",
+        )
+
+        # helpers.py imports List from utils (only for re-export to main)
+        (root / "helpers.py").write_text("from utils import List\n")
+
+        # utils.py imports List from typing (only for re-export to helpers)
+        (root / "utils.py").write_text("from typing import List\n")
+
+        graph = build_import_graph(root / "main.py")
+        result = analyze_cross_file(graph)
+
+        # All three imports should be unused in a single pass:
+        # 1. main.py's List is unused locally
+        # 2. helpers.py's List is only re-exported to main, which is being removed
+        # 3. utils.py's List is only re-exported to helpers, which is being removed
+
+        main_unused = result.unused_imports.get(root / "main.py", [])
+        helpers_unused = result.unused_imports.get(root / "helpers.py", [])
+        utils_unused = result.unused_imports.get(root / "utils.py", [])
+
+        assert any(imp.name == "List" for imp in main_unused), "List should be unused in main.py"
+        assert any(imp.name == "List" for imp in helpers_unused), "List should be unused in helpers.py"
+        assert any(imp.name == "List" for imp in utils_unused), "List should be unused in utils.py"
+
+
+def test_cascade_partial_chain():
+    """Cascade should stop when an import is actually used."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        root = Path(tmpdir).resolve()
+
+        # main.py imports List from helpers but doesn't use it
+        (root / "main.py").write_text(
+            "from helpers import List  # unused!\n" "x = 1\n",
+        )
+
+        # helpers.py imports List and uses it locally too
+        (root / "helpers.py").write_text(
+            "from utils import List\n" "data: List[int] = []\n",
+        )
+
+        # utils.py imports List from typing
+        (root / "utils.py").write_text("from typing import List\n")
+
+        graph = build_import_graph(root / "main.py")
+        result = analyze_cross_file(graph)
+
+        # main.py's List is unused
+        main_unused = result.unused_imports.get(root / "main.py", [])
+        assert any(imp.name == "List" for imp in main_unused)
+
+        # helpers.py's List is used locally, so NOT unused
+        helpers_unused = result.unused_imports.get(root / "helpers.py", [])
+        assert not any(imp.name == "List" for imp in helpers_unused)
+
+        # utils.py's List is re-exported to helpers (which uses it), so NOT unused
+        utils_unused = result.unused_imports.get(root / "utils.py", [])
+        assert not any(imp.name == "List" for imp in utils_unused)
+
+
+def test_cascade_multiple_consumers():
+    """Import should remain if ANY consumer still uses it."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        root = Path(tmpdir).resolve()
+
+        # main.py doesn't use List
+        (root / "main.py").write_text(
+            "from utils import List  # unused\n"
+            "from other import helper\n"
+            "helper()\n",
+        )
+
+        # other.py uses List from utils
+        (root / "other.py").write_text(
+            "from utils import List\n"
+            "def helper() -> List[int]: return []\n",
+        )
+
+        # utils.py imports List from typing
+        (root / "utils.py").write_text("from typing import List\n")
+
+        graph = build_import_graph(root / "main.py")
+        result = analyze_cross_file(graph)
+
+        # main.py's List is unused
+        main_unused = result.unused_imports.get(root / "main.py", [])
+        assert any(imp.name == "List" for imp in main_unused)
+
+        # other.py's List is used locally
+        other_unused = result.unused_imports.get(root / "other.py", [])
+        assert not any(imp.name == "List" for imp in other_unused)
+
+        # utils.py's List is still re-exported to other.py, so NOT unused
+        utils_unused = result.unused_imports.get(root / "utils.py", [])
+        assert not any(imp.name == "List" for imp in utils_unused)

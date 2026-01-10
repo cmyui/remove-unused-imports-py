@@ -40,37 +40,58 @@ class CrossFileAnalyzer:
 
         Steps:
         1. Run single-file analysis on each module
-        2. Identify which imports are re-exported to other files
-        3. Mark re-exported imports as "used" (not unused)
-        4. Find implicit re-exports (re-exported but not in __all__)
-        5. Aggregate external module usage
-        6. Find circular imports
+        2. Compute full cascade of unused imports (iterate until stable)
+        3. Find implicit re-exports (re-exported but not in __all__)
+        4. Aggregate external module usage
+        5. Find circular imports
+
+        The cascade computation handles chains like:
+        - A imports X from B (unused in A)
+        - B imports X from C (only re-exported to A)
+        - When A's import is removed, B's import becomes unused too
         """
         result = CrossFileResult()
 
         # Step 1: Get single-file unused imports for each module
         single_file_unused = self._get_single_file_unused()
 
-        # Step 2: Find re-exported imports (imports used by other files)
-        reexported = self._find_reexported_imports()
+        # Step 2: Compute full cascade of unused imports
+        all_removed: dict[Path, set[str]] = defaultdict(set)
 
-        # Step 3: Filter out re-exported imports from unused list
-        for file_path, unused in single_file_unused.items():
-            reexported_names = reexported.get(file_path, set())
-            truly_unused = [
-                imp for imp in unused
-                if imp.name not in reexported_names
+        changed = True
+        while changed:
+            changed = False
+
+            # Find re-exports considering current "virtually removed" set
+            reexported = self._find_reexported_imports(removed_imports=all_removed)
+
+            # Anything unused locally AND not re-exported → mark for removal
+            for file_path, unused in single_file_unused.items():
+                reexported_names = reexported.get(file_path, set())
+                for imp in unused:
+                    if imp.name not in reexported_names:
+                        if imp.name not in all_removed[file_path]:
+                            all_removed[file_path].add(imp.name)
+                            changed = True
+
+        # Build unused_imports from the stable removed set
+        for file_path, removed_names in all_removed.items():
+            unused_imports = [
+                imp for imp in single_file_unused.get(file_path, [])
+                if imp.name in removed_names
             ]
-            if truly_unused:
-                result.unused_imports[file_path] = truly_unused
+            if unused_imports:
+                result.unused_imports[file_path] = unused_imports
 
-        # Step 4: Find implicit re-exports
-        result.implicit_reexports = self._find_implicit_reexports(reexported)
+        # Step 3: Find implicit re-exports (using final reexported state)
+        # Re-compute with final removed set to get accurate re-export info
+        final_reexported = self._find_reexported_imports(removed_imports=all_removed)
+        result.implicit_reexports = self._find_implicit_reexports(final_reexported)
 
-        # Step 5: Aggregate external usage
+        # Step 4: Aggregate external usage
         result.external_usage = self._aggregate_external_usage()
 
-        # Step 6: Find circular imports
+        # Step 5: Find circular imports
         result.circular_imports = self.graph.find_cycles()
 
         return result
@@ -91,12 +112,21 @@ class CrossFileAnalyzer:
 
         return result
 
-    def _find_reexported_imports(self) -> dict[Path, set[str]]:
+    def _find_reexported_imports(
+        self,
+        removed_imports: dict[Path, set[str]] | None = None,
+    ) -> dict[Path, set[str]]:
         """Find imports that are re-exported to other files.
+
+        Args:
+            removed_imports: Imports to consider as "virtually removed".
+                When checking if file B's import is re-exported via file A,
+                skip if A's import of that name is in this set.
 
         Returns a mapping of file -> set of import names that are used
         by other files importing from this file.
         """
+        removed = removed_imports or {}
         reexported: dict[Path, set[str]] = defaultdict(set)
 
         for edge in self.graph.edges:
@@ -108,6 +138,13 @@ class CrossFileAnalyzer:
             imported_file = edge.imported
             imported_names = edge.names
 
+            # Filter out names that are "virtually removed" from the importer
+            importer_removed = removed.get(edge.importer, set())
+            active_names = imported_names - importer_removed
+
+            if not active_names:
+                continue
+
             if imported_file not in self.graph.nodes:
                 continue
 
@@ -118,7 +155,7 @@ class CrossFileAnalyzer:
             import_names_in_file = {imp.name for imp in module_info.imports}
             defined_in_file = module_info.defined_names
 
-            for name in imported_names:
+            for name in active_names:
                 # If the name is an import in the target file (not defined),
                 # then it's being re-exported
                 if name in import_names_in_file and name not in defined_in_file:
