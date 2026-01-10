@@ -6,7 +6,7 @@ from dataclasses import field
 from enum import Enum
 from enum import auto
 
-from remove_unused_imports._data import ImportInfo
+from import_analyzer._data import ImportInfo
 
 # =============================================================================
 # Scope Analysis Infrastructure
@@ -202,12 +202,14 @@ class ScopeAwareNameCollector(ast.NodeVisitor):
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
         """Handle function definitions."""
-        # 1. Bind function name in CURRENT scope
-        self._add_binding_with_shadow_tracking(node.name)
-
-        # 2. Visit decorators in CURRENT scope
+        # 1. Visit decorators in CURRENT scope FIRST
+        # Decorators are evaluated before the function name is bound,
+        # so @foo must resolve before `def foo` creates a binding.
         for decorator in node.decorator_list:
             self.visit(decorator)
+
+        # 2. Bind function name in CURRENT scope
+        self._add_binding_with_shadow_tracking(node.name)
 
         # 3. Visit annotations and defaults in CURRENT scope
         self._visit_function_annotations_and_defaults(node)
@@ -227,9 +229,10 @@ class ScopeAwareNameCollector(ast.NodeVisitor):
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
         """Handle async function definitions (same as sync)."""
-        self._add_binding_with_shadow_tracking(node.name)
+        # Visit decorators FIRST, before binding function name
         for decorator in node.decorator_list:
             self.visit(decorator)
+        self._add_binding_with_shadow_tracking(node.name)
         self._visit_function_annotations_and_defaults(node)
         self._scope_stack.push(Scope(ScopeType.FUNCTION, name=node.name))
         self._bind_function_parameters(node.args)
@@ -251,12 +254,13 @@ class ScopeAwareNameCollector(ast.NodeVisitor):
 
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
         """Handle class definitions."""
-        # 1. Bind class name in CURRENT scope
-        self._add_binding_with_shadow_tracking(node.name)
-
-        # 2. Visit decorators in CURRENT scope
+        # 1. Visit decorators in CURRENT scope FIRST
+        # Decorators are evaluated before the class name is bound.
         for decorator in node.decorator_list:
             self.visit(decorator)
+
+        # 2. Bind class name in CURRENT scope
+        self._add_binding_with_shadow_tracking(node.name)
 
         # 3. Visit base classes and keywords in CURRENT scope
         for base in node.bases:
@@ -517,18 +521,22 @@ class ImportExtractor(ast.NodeVisitor):
                 # Only the top-level name is bound
                 name = alias.name.split(".")[0]
 
+            # Use alias's lineno for multi-line imports (Python 3.10+)
+            # This ensures noqa comments on specific lines are respected
+            alias_lineno = getattr(alias, "lineno", node.lineno)
             self.imports.append(
                 ImportInfo(
                     name=name,
                     module="",
                     original_name=alias.name,
-                    lineno=node.lineno,
+                    lineno=alias_lineno,
                     col_offset=node.col_offset,
                     end_lineno=node.end_lineno or node.lineno,
                     end_col_offset=node.end_col_offset or 0,
                     is_from_import=False,
                     full_node_lineno=node.lineno,
                     full_node_end_lineno=node.end_lineno or node.lineno,
+                    level=0,  # Regular imports are always absolute
                 ),
             )
         self.generic_visit(node)
@@ -546,18 +554,22 @@ class ImportExtractor(ast.NodeVisitor):
                 continue
 
             name = alias.asname if alias.asname else alias.name
+            # Use alias's lineno for multi-line imports (Python 3.10+)
+            # This ensures noqa comments on specific lines are respected
+            alias_lineno = getattr(alias, "lineno", node.lineno)
             self.imports.append(
                 ImportInfo(
                     name=name,
                     module=module,
                     original_name=alias.name,
-                    lineno=node.lineno,
+                    lineno=alias_lineno,
                     col_offset=node.col_offset,
                     end_lineno=node.end_lineno or node.lineno,
                     end_col_offset=node.end_col_offset or 0,
                     is_from_import=True,
                     full_node_lineno=node.lineno,
                     full_node_end_lineno=node.end_lineno or node.lineno,
+                    level=node.level,  # Number of dots for relative imports
                 ),
             )
         self.generic_visit(node)

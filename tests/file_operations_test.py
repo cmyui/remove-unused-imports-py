@@ -3,8 +3,8 @@ from __future__ import annotations
 
 import pytest
 
-from remove_unused_imports import check_file
-from remove_unused_imports import collect_python_files
+from import_analyzer import check_file
+from import_analyzer import collect_python_files
 
 # =============================================================================
 # check_file

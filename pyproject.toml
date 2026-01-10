@@ -3,9 +3,9 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "remove-unused-imports"
+name = "import-analyzer-py"
 version = "0.1.0"
-description = "A Python linter that detects and autofixes unused imports"
+description = "A Python import analyzer with cross-file analysis, unused import detection, and autofix"
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.10"
@@ -27,7 +27,7 @@ classifiers = [
 ]
 
 [project.scripts]
-remove-unused-imports = "remove_unused_imports:main"
+import-analyzer = "import_analyzer:main"
 
 [project.optional-dependencies]
 dev = [
@@ -37,7 +37,7 @@ dev = [
 ]
 
 [tool.setuptools]
-packages = ["remove_unused_imports"]
+packages = ["import_analyzer"]
 
 [tool.coverage.run]
 plugins = ["covdefaults"]
