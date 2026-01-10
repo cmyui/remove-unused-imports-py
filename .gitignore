@@ -34,3 +34,6 @@ coverage.xml
 # OS
 .DS_Store
 Thumbs.db
+
+# uv (don't commit lockfile for libraries)
+uv.lock

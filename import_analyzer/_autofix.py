@@ -184,7 +184,7 @@ def _find_semicolon_removals(
     return removals, lines_to_remove
 
 
-def import_analyzer(source: str, unused_imports: list[ImportInfo]) -> str:
+def remove_unused_imports(source: str, unused_imports: list[ImportInfo]) -> str:
     """Remove unused imports from the source code."""
     if not unused_imports:
         return source
