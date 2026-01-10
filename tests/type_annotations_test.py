@@ -253,3 +253,42 @@ def test_quoted_types_in_generics_noop(s):
 def test_string_annotation_attribute_access_noop(s):
     """Test string annotations with attribute access use imports."""
     assert _get_unused_names(s) == set()
+
+
+# =============================================================================
+# String literals that are NOT annotations
+# =============================================================================
+
+
+@pytest.mark.parametrize(
+    ('s', 'expected'),
+    (
+        # String literal in assignment is not an annotation
+        pytest.param(
+            'x = "health"; import health\n',
+            {'health'},
+            id='string literal in assignment',
+        ),
+        # String literal in function call is not an annotation
+        pytest.param(
+            'print("os"); import os\n',
+            {'os'},
+            id='string literal in function call',
+        ),
+        # String literal in list is not an annotation
+        pytest.param(
+            'x = ["json"]; import json\n',
+            {'json'},
+            id='string literal in list',
+        ),
+        # String literal in dict is not an annotation
+        pytest.param(
+            'x = {"key": "sys"}; import sys\n',
+            {'sys'},
+            id='string literal in dict',
+        ),
+    ),
+)
+def test_string_literal_not_annotation(s, expected):
+    """Test that string literals outside annotation contexts don't count as usage."""
+    assert _get_unused_names(s) == expected

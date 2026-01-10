@@ -595,14 +595,24 @@ class NameUsageCollector(ast.NodeVisitor):
 
 
 class StringAnnotationVisitor(ast.NodeVisitor):
-    """Extract names from string annotations (forward references)."""
+    """Extract names from string annotations (forward references).
+
+    Parses strings that appear in annotation contexts:
+    - Function parameter annotations
+    - Function return annotations
+    - Variable annotations (AnnAssign)
+    - Strings inside type subscripts (e.g., Optional["Foo"])
+    """
 
     def __init__(self) -> None:
         self.used_names: set[str] = set()
 
-    def visit_Constant(self, node: ast.Constant) -> None:
-        if isinstance(node.value, str):
-            # Try to parse the string as a type annotation
+    def _parse_string_annotation(self, node: ast.expr | None) -> None:
+        """Parse a potential string annotation and extract names."""
+        if node is None:
+            return
+        # Handle direct string constant
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
             try:
                 parsed = ast.parse(node.value, mode="eval")
                 collector = NameUsageCollector()
@@ -610,12 +620,47 @@ class StringAnnotationVisitor(ast.NodeVisitor):
                 self.used_names.update(collector.used_names)
             except SyntaxError:
                 pass
+        # Handle subscripts like Optional["Foo"] - recurse into the slice
+        elif isinstance(node, ast.Subscript):
+            self._parse_string_annotation(node.slice)
+            # Also check the value (e.g., for nested like Dict[str, "Foo"])
+            self._parse_string_annotation(node.value)
+        # Handle tuples in subscripts like Dict["Key", "Value"]
+        elif isinstance(node, ast.Tuple):
+            for elt in node.elts:
+                self._parse_string_annotation(elt)
+        # Handle BinOp for union types like "Foo" | "Bar"
+        elif isinstance(node, ast.BinOp):
+            self._parse_string_annotation(node.left)
+            self._parse_string_annotation(node.right)
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        # Check return annotation
+        self._parse_string_annotation(node.returns)
+        # Check parameter annotations
+        for arg in node.args.args + node.args.posonlyargs + node.args.kwonlyargs:
+            self._parse_string_annotation(arg.annotation)
+        if node.args.vararg:
+            self._parse_string_annotation(node.args.vararg.annotation)
+        if node.args.kwarg:
+            self._parse_string_annotation(node.args.kwarg.annotation)
         self.generic_visit(node)
 
-    def visit_Subscript(self, node: ast.Subscript) -> None:
-        # Handle things like Optional["ClassName"]
-        self.visit(node.value)
-        self.visit(node.slice)
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        # Same as FunctionDef
+        self._parse_string_annotation(node.returns)
+        for arg in node.args.args + node.args.posonlyargs + node.args.kwonlyargs:
+            self._parse_string_annotation(arg.annotation)
+        if node.args.vararg:
+            self._parse_string_annotation(node.args.vararg.annotation)
+        if node.args.kwarg:
+            self._parse_string_annotation(node.args.kwarg.annotation)
+        self.generic_visit(node)
+
+    def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
+        # Variable annotation like `x: "Foo" = ...`
+        self._parse_string_annotation(node.annotation)
+        self.generic_visit(node)
 
 
 def collect_string_annotation_names(tree: ast.AST) -> set[str]:
