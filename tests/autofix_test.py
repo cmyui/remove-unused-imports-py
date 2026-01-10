@@ -627,3 +627,57 @@ def test_autofix_semicolon_surgical_removal(s, expected):
     unused = find_unused_imports(s)
     result = remove_unused_imports(s, unused)
     assert result == expected
+
+
+@pytest.mark.parametrize(
+    ('s', 'expected'),
+    (
+        # Multiple spaces around semicolon
+        pytest.param(
+            'import os  ;  x = 1\n',
+            'x = 1\n',
+            id='multiple spaces around semicolon',
+        ),
+        # Tabs around semicolon
+        pytest.param(
+            'import os\t;\tx = 1\n',
+            'x = 1\n',
+            id='tabs around semicolon',
+        ),
+        # Mixed whitespace around semicolon
+        pytest.param(
+            'import os \t ; \t x = 1\n',
+            'x = 1\n',
+            id='mixed whitespace around semicolon',
+        ),
+        # No spaces around semicolon
+        pytest.param(
+            'import os;x = 1\n',
+            'x = 1\n',
+            id='no spaces around semicolon',
+        ),
+        # Statement then import with tabs
+        pytest.param(
+            'x = 1\t;\timport os\n',
+            'x = 1\n',
+            id='statement then import with tabs',
+        ),
+        # Statement then import with multiple spaces
+        pytest.param(
+            'x = 1  ;  import os\n',
+            'x = 1\n',
+            id='statement then import with spaces',
+        ),
+        # Statement then import no spaces
+        pytest.param(
+            'x = 1;import os\n',
+            'x = 1\n',
+            id='statement then import no spaces',
+        ),
+    ),
+)
+def test_autofix_semicolon_whitespace_handling(s, expected):
+    """Test surgical removal handles various whitespace around semicolons."""
+    unused = find_unused_imports(s)
+    result = remove_unused_imports(s, unused)
+    assert result == expected

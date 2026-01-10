@@ -126,18 +126,25 @@ def _find_semicolon_removals(
             end_col = stmt.end_col_offset or len(line.rstrip('\n'))
 
             # Determine if we need to include semicolon before or after
+            # Handle any whitespace (spaces, tabs) around semicolons
             if i == 0:
-                # First statement - remove trailing "; "
-                # Find the semicolon after end_col
+                # First statement - remove trailing whitespace, semicolon, whitespace
                 rest = line[end_col:]
-                semi_match = len(rest) - len(rest.lstrip('; '))
-                end_col += semi_match
+                # Strip: optional whitespace, semicolon, optional whitespace
+                stripped = rest.lstrip(' \t')
+                if stripped.startswith(';'):
+                    stripped = stripped[1:].lstrip(' \t')
+                # Calculate how much extra to remove
+                end_col += len(rest) - len(stripped)
             else:
-                # Not first - remove leading "; "
-                # Find semicolon before start_col
+                # Not first - remove leading whitespace, semicolon, whitespace
                 prefix = line[:start_col]
-                semi_match = len(prefix) - len(prefix.rstrip('; '))
-                start_col -= semi_match
+                # Strip from right: optional whitespace, semicolon, optional whitespace
+                stripped = prefix.rstrip(' \t')
+                if stripped.endswith(';'):
+                    stripped = stripped[:-1].rstrip(' \t')
+                # Calculate new start position
+                start_col = len(stripped)
 
             line_removals.append((start_col, end_col))
 
