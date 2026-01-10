@@ -515,7 +515,27 @@ def test_global_declaration_noop(s):
 @pytest.mark.parametrize(
     's',
     (
-        # Nonlocal in nested function
+        # Nonlocal references import inside outer function
+        pytest.param(
+            'def outer():\n'
+            '    import os\n'
+            '    def inner():\n'
+            '        nonlocal os\n'
+            '        return os.getcwd()\n'
+            '    return inner()\n',
+            id='nonlocal uses import from enclosing function',
+        ),
+    ),
+)
+def test_nonlocal_uses_import_noop(s):
+    """Test nonlocal can reference an import in enclosing function scope."""
+    assert _get_unused_names(s) == set()
+
+
+@pytest.mark.parametrize(
+    's',
+    (
+        # Nonlocal in nested function (import shadowed by local)
         pytest.param(
             'import value\n'
             '\n'
@@ -525,12 +545,12 @@ def test_global_declaration_noop(s):
             '        nonlocal value\n'
             '        value += 1\n'
             '    inner()\n',
-            id='nonlocal uses enclosing scope',
+            id='nonlocal uses enclosing scope not import',
         ),
     ),
 )
 def test_nonlocal_declaration(s):
-    """Test nonlocal declarations resolve to enclosing scope."""
+    """Test nonlocal declarations resolve to enclosing scope, not module."""
     # The import is shadowed by outer's local variable
     assert _get_unused_names(s) == {'value'}
 
