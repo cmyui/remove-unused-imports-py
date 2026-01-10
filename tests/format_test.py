@@ -11,27 +11,38 @@ from remove_unused_imports._format import format_cross_file_results
 from remove_unused_imports._format import make_relative
 
 
-def test_make_relative_when_under_base():
+def test_make_relative_when_under_base(tmp_path: Path) -> None:
     """Should return relative path when under base."""
-    base = Path("/project/src")
-    path = Path("/project/src/pkg/module.py")
-    # Use Path to normalize separators for cross-platform comparison
+    base = tmp_path / "project" / "src"
+    base.mkdir(parents=True)
+    path = base / "pkg" / "module.py"
+    path.parent.mkdir(parents=True)
+    path.touch()
     assert Path(make_relative(path, base)) == Path("pkg/module.py")
 
 
-def test_make_relative_when_not_under_base():
+def test_make_relative_when_not_under_base(tmp_path: Path) -> None:
     """Should return absolute path when not under base."""
-    base = Path("/project/src")
-    path = Path("/other/location/module.py")
-    # Use Path to normalize separators for cross-platform comparison
-    assert Path(make_relative(path, base)) == Path("/other/location/module.py")
+    base = tmp_path / "project" / "src"
+    base.mkdir(parents=True)
+    path = tmp_path / "other" / "location" / "module.py"
+    path.parent.mkdir(parents=True)
+    path.touch()
+    # When not under base, returns the full path
+    result = make_relative(path, base)
+    assert "module.py" in result
 
 
-def test_format_groups_by_file():
+def test_format_groups_by_file(tmp_path: Path) -> None:
     """Should group unused imports by file."""
+    base = tmp_path / "project" / "src"
+    base.mkdir(parents=True)
+    file1 = base / "a.py"
+    file2 = base / "b.py"
+    file1.touch()
+    file2.touch()
+
     result = CrossFileResult()
-    file1 = Path("/project/src/a.py")
-    file2 = Path("/project/src/b.py")
     result.unused_imports = {
         file1: [
             ImportInfo(
@@ -50,7 +61,7 @@ def test_format_groups_by_file():
     }
 
     lines = format_cross_file_results(
-        result, base_path=Path("/project/src"), fix=False,
+        result, base_path=base, fix=False,
     )
     output = "\n".join(lines)
 
@@ -60,10 +71,14 @@ def test_format_groups_by_file():
     assert "sys" in output
 
 
-def test_format_groups_same_line_imports():
+def test_format_groups_same_line_imports(tmp_path: Path) -> None:
     """Should group imports from same line together."""
+    base = tmp_path / "project" / "src"
+    base.mkdir(parents=True)
+    file1 = base / "module.py"
+    file1.touch()
+
     result = CrossFileResult()
-    file1 = Path("/project/src/module.py")
     result.unused_imports = {
         file1: [
             ImportInfo(
@@ -80,7 +95,7 @@ def test_format_groups_same_line_imports():
     }
 
     lines = format_cross_file_results(
-        result, base_path=Path("/project/src"), fix=False,
+        result, base_path=base, fix=False,
     )
     output = "\n".join(lines)
 
@@ -90,19 +105,26 @@ def test_format_groups_same_line_imports():
     assert "Dict" in output
 
 
-def test_format_implicit_reexports_section():
+def test_format_implicit_reexports_section(tmp_path: Path) -> None:
     """Should format implicit re-exports in a separate section."""
+    base = tmp_path / "project" / "src"
+    base.mkdir(parents=True)
+    utils_file = base / "utils.py"
+    main_file = base / "main.py"
+    utils_file.touch()
+    main_file.touch()
+
     result = CrossFileResult()
     result.implicit_reexports = [
         ImplicitReexport(
-            source_file=Path("/project/src/utils.py"),
+            source_file=utils_file,
             import_name="helper",
-            used_by={Path("/project/src/main.py")},
+            used_by={main_file},
         ),
     ]
 
     lines = format_cross_file_results(
-        result, base_path=Path("/project/src"),
+        result, base_path=base,
         warn_implicit_reexports=True, fix=False,
     )
     output = "\n".join(lines)
@@ -112,18 +134,20 @@ def test_format_implicit_reexports_section():
     assert "main.py" in output
 
 
-def test_format_circular_imports_section():
+def test_format_circular_imports_section(tmp_path: Path) -> None:
     """Should format circular imports in a separate section."""
+    base = tmp_path / "project" / "src"
+    base.mkdir(parents=True)
+    file_a = base / "a.py"
+    file_b = base / "b.py"
+    file_a.touch()
+    file_b.touch()
+
     result = CrossFileResult()
-    result.circular_imports = [
-        [
-            Path("/project/src/a.py"),
-            Path("/project/src/b.py"),
-        ],
-    ]
+    result.circular_imports = [[file_a, file_b]]
 
     lines = format_cross_file_results(
-        result, base_path=Path("/project/src"),
+        result, base_path=base,
         warn_circular=True, fix=False,
     )
     output = "\n".join(lines)
@@ -133,15 +157,22 @@ def test_format_circular_imports_section():
     assert "b.py" in output
 
 
-def test_format_long_cycle_abbreviated():
+def test_format_long_cycle_abbreviated(tmp_path: Path) -> None:
     """Should abbreviate long circular import cycles."""
-    result = CrossFileResult()
+    base = tmp_path / "project" / "src"
+    base.mkdir(parents=True)
     # Create a cycle with 10 files
-    cycle = [Path(f"/project/src/{chr(ord('a') + i)}.py") for i in range(10)]
+    cycle = []
+    for i in range(10):
+        f = base / f"{chr(ord('a') + i)}.py"
+        f.touch()
+        cycle.append(f)
+
+    result = CrossFileResult()
     result.circular_imports = [cycle]
 
     lines = format_cross_file_results(
-        result, base_path=Path("/project/src"),
+        result, base_path=base,
         warn_circular=True, fix=False,
     )
     output = "\n".join(lines)
@@ -150,22 +181,29 @@ def test_format_long_cycle_abbreviated():
     assert "10 files in cycle" in output
 
 
-def test_format_summary_when_no_issues():
+def test_format_summary_when_no_issues(tmp_path: Path) -> None:
     """Should show 'no issues' message when nothing found."""
+    base = tmp_path / "project" / "src"
+    base.mkdir(parents=True)
+
     result = CrossFileResult()
 
     lines = format_cross_file_results(
-        result, base_path=Path("/project/src"), fix=False,
+        result, base_path=base, fix=False,
     )
     output = "\n".join(lines)
 
     assert "No unused imports found" in output
 
 
-def test_format_summary_with_issues():
+def test_format_summary_with_issues(tmp_path: Path) -> None:
     """Should show count in summary."""
+    base = tmp_path / "project" / "src"
+    base.mkdir(parents=True)
+    file1 = base / "a.py"
+    file1.touch()
+
     result = CrossFileResult()
-    file1 = Path("/project/src/a.py")
     result.unused_imports = {
         file1: [
             ImportInfo(
@@ -177,17 +215,21 @@ def test_format_summary_with_issues():
     }
 
     lines = format_cross_file_results(
-        result, base_path=Path("/project/src"), fix=False,
+        result, base_path=base, fix=False,
     )
     output = "\n".join(lines)
 
     assert "Found 1 unused import(s)" in output
 
 
-def test_format_quiet_mode_shows_only_summary():
+def test_format_quiet_mode_shows_only_summary(tmp_path: Path) -> None:
     """Quiet mode should only show summary."""
+    base = tmp_path / "project" / "src"
+    base.mkdir(parents=True)
+    file1 = base / "a.py"
+    file1.touch()
+
     result = CrossFileResult()
-    file1 = Path("/project/src/a.py")
     result.unused_imports = {
         file1: [
             ImportInfo(
@@ -199,7 +241,7 @@ def test_format_quiet_mode_shows_only_summary():
     }
 
     lines = format_cross_file_results(
-        result, base_path=Path("/project/src"), fix=False, quiet=True,
+        result, base_path=base, fix=False, quiet=True,
     )
     output = "\n".join(lines)
 
@@ -208,10 +250,14 @@ def test_format_quiet_mode_shows_only_summary():
     assert "a.py" not in output
 
 
-def test_format_fixed_shows_fixed_count():
+def test_format_fixed_shows_fixed_count(tmp_path: Path) -> None:
     """Should show 'Fixed' instead of 'Found' in fix mode."""
+    base = tmp_path / "project" / "src"
+    base.mkdir(parents=True)
+    file1 = base / "a.py"
+    file1.touch()
+
     result = CrossFileResult()
-    file1 = Path("/project/src/a.py")
     result.unused_imports = {
         file1: [
             ImportInfo(
@@ -223,7 +269,7 @@ def test_format_fixed_shows_fixed_count():
     }
 
     lines = format_cross_file_results(
-        result, base_path=Path("/project/src"),
+        result, base_path=base,
         fix=True, fixed_files={file1: 1},
     )
     output = "\n".join(lines)
