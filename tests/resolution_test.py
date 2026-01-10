@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import tempfile
+import warnings
 from pathlib import Path
 
 import pytest
@@ -82,7 +83,8 @@ def test_resolver_resolve_absolute_module(resolver_project_dir):
     """Should resolve module in package."""
     resolver = ModuleResolver(resolver_project_dir / "main.py")
     result = resolver.resolve_import(
-        "mypackage.utils", resolver_project_dir / "main.py",
+        "mypackage.utils",
+        resolver_project_dir / "main.py",
     )
     assert result == resolver_project_dir / "mypackage" / "utils.py"
 
@@ -91,7 +93,8 @@ def test_resolver_resolve_absolute_subpackage(resolver_project_dir):
     """Should resolve subpackage to __init__.py."""
     resolver = ModuleResolver(resolver_project_dir / "main.py")
     result = resolver.resolve_import(
-        "mypackage.subpkg", resolver_project_dir / "main.py",
+        "mypackage.subpkg",
+        resolver_project_dir / "main.py",
     )
     assert result == resolver_project_dir / "mypackage" / "subpkg" / "__init__.py"
 
@@ -100,7 +103,8 @@ def test_resolver_resolve_absolute_nested_module(resolver_project_dir):
     """Should resolve deeply nested module."""
     resolver = ModuleResolver(resolver_project_dir / "main.py")
     result = resolver.resolve_import(
-        "mypackage.subpkg.helper", resolver_project_dir / "main.py",
+        "mypackage.subpkg.helper",
+        resolver_project_dir / "main.py",
     )
     assert result == resolver_project_dir / "mypackage" / "subpkg" / "helper.py"
 
@@ -116,7 +120,8 @@ def test_resolver_resolve_nonexistent_returns_none(resolver_project_dir):
     """Should return None for nonexistent modules."""
     resolver = ModuleResolver(resolver_project_dir / "main.py")
     result = resolver.resolve_import(
-        "nonexistent_xyz", resolver_project_dir / "main.py",
+        "nonexistent_xyz",
+        resolver_project_dir / "main.py",
     )
     assert result is None
 
@@ -200,6 +205,34 @@ def test_resolve_relative_subpackage(relative_import_project_dir):
     from_file = relative_import_project_dir / "pkg" / "module_a.py"
     result = resolver.resolve_import("sub.module_c", from_file, level=1)
     assert result == relative_import_project_dir / "pkg" / "sub" / "module_c.py"
+
+
+def test_resolve_relative_beyond_source_root(relative_import_project_dir):
+    """Relative import that goes above source root should return None and warn."""
+    resolver = ModuleResolver(relative_import_project_dir / "entry.py")
+    # pkg/module_a.py trying to do "from ... import x" (level=3)
+    # This would go: pkg -> root -> above root (invalid)
+    from_file = relative_import_project_dir / "pkg" / "module_a.py"
+
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        result = resolver.resolve_import("something", from_file, level=3)
+
+        assert result is None
+        assert len(w) == 1
+        assert "level=3" in str(w[0].message)
+        assert "beyond source root" in str(w[0].message)
+
+
+def test_resolve_relative_at_source_root_boundary(relative_import_project_dir):
+    """Relative import that stays exactly at source root should work."""
+    resolver = ModuleResolver(relative_import_project_dir / "entry.py")
+    # pkg/module_a.py doing "from .. import x" (level=2) goes to root, which is valid
+    from_file = relative_import_project_dir / "pkg" / "module_a.py"
+    # Create a module at the root level to import
+    (relative_import_project_dir / "root_module.py").write_text("")
+    result = resolver.resolve_import("root_module", from_file, level=2)
+    assert result == relative_import_project_dir / "root_module.py"
 
 
 # =============================================================================

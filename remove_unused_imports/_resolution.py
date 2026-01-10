@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import sys
+import warnings
 from pathlib import Path
 
 
@@ -188,6 +189,16 @@ class ModuleResolver:
         # Go up 'level' directories (level=1 means current package, level=2 means parent, etc.)
         for _ in range(level - 1):
             current = current.parent
+            # Check if we've gone above the source root
+            # (mirrors Python's "attempted relative import beyond top-level package")
+            try:
+                current.relative_to(self.source_root)
+            except ValueError:
+                warnings.warn(
+                    f"Relative import with level={level} in {from_file} "
+                    f"goes beyond source root (this would raise ImportError at runtime)",
+                )
+                return None
 
         # If there's a module name, resolve it relative to current
         if module_name:
