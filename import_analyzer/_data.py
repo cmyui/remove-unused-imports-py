@@ -97,6 +97,21 @@ class IndirectImport:
 
 
 @dataclass
+class TypeStringUsage:
+    """A usage of an attribute access found in a type comment or string annotation.
+
+    Example:
+        x = None  # type: models.LOGGER
+        y: "models.User" = None
+    """
+
+    lineno: int  # Line containing the type string
+    col_offset: int  # Column where the attribute access starts in source
+    end_col_offset: int  # Column where the attribute access ends in source
+    context: str  # "type_comment" or "string_annotation"
+
+
+@dataclass
 class IndirectAttributeAccess:
     """Attribute access through a re-exporter instead of the source.
 
@@ -129,6 +144,15 @@ class IndirectAttributeAccess:
         # app.py (DIRECT)
         import logger
         logger.LOGGER.info("hello")
+
+    Example (type comment):
+        # app.py (INDIRECT)
+        import models
+        x = None  # type: models.LOGGER
+
+        # app.py (DIRECT)
+        import logger
+        x = None  # type: logger.LOGGER
     """
 
     file: Path  # File with the indirect access
@@ -137,10 +161,11 @@ class IndirectAttributeAccess:
     attr_path: list[str]  # Full path from import to final attr (e.g., ["internal", "LOGGER"])
     attr_name: str  # Final attribute being accessed (e.g., "LOGGER") - last element of attr_path
     original_name: str  # Name as defined in original_source (may differ if aliased)
-    usages: list[tuple[int, int]]  # List of (lineno, col_offset) for each usage
+    usages: list[tuple[int, int]]  # List of (lineno, col_offset) for each usage in code
     current_source: Path  # Module where final attr is accessed (the re-exporter)
     original_source: Path  # Where it's actually defined
-    is_same_package: bool  # True if re-exporter is __init__.py of original's package
+    type_string_usages: list[TypeStringUsage] = field(default_factory=list)  # Usages in type strings
+    is_same_package: bool = False  # True if re-exporter is __init__.py of original's package
 
 
 def is_under_path(file_path: Path, base_path: Path) -> bool:

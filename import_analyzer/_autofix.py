@@ -611,6 +611,7 @@ def fix_indirect_attr_accesses(
     This involves:
     1. Adding new import statements at the same location as the original import
     2. Rewriting all usage sites (module.attr.chain -> new_module.original_name)
+    3. Rewriting type comments and string annotations
 
     Note: Removing the now-unused original import is handled by the
     existing unused import removal logic.
@@ -641,6 +642,26 @@ def fix_indirect_attr_accesses(
                 import models
                 import logger
                 logger.LOGGER.info("hello")
+
+    Example (type comment):
+        Before:
+            import models
+            x = None  # type: models.LOGGER
+
+        After:
+            import models
+            import logger
+            x = None  # type: logger.LOGGER
+
+    Example (string annotation):
+        Before:
+            import models
+            x: "models.LOGGER" = None
+
+        After:
+            import models
+            import logger
+            x: "logger.LOGGER" = None
     """
     if not indirect_accesses:
         return source
@@ -669,15 +690,38 @@ def fix_indirect_attr_accesses(
 
         imports_by_location[(acc.import_lineno, indent_str)].add(target_module)
 
+        # Build the old and new text patterns
+        old_prefix = acc.import_name + "." + ".".join(acc.attr_path)
+        new_prefix = f"{target_module}.{acc.original_name}"
+
+        # Add code usages
         for lineno, col_offset in acc.usages:
-            # Build the old text: import_name.attr_path (e.g., "pkg.internal.LOGGER")
-            old_prefix = acc.import_name + "." + ".".join(acc.attr_path)
-            # Build the new text: target_module.original_name (e.g., "logger.LOGGER")
-            new_prefix = f"{target_module}.{acc.original_name}"
             replacements.append((lineno, col_offset, old_prefix, new_prefix))
+
+        # Add type string usages
+        # For type strings, we use the stored col_offset but verify by searching
+        for ts_usage in acc.type_string_usages:
+            line_idx = ts_usage.lineno - 1
+            if line_idx < len(lines):
+                line = lines[line_idx]
+                # Search for the old_prefix in the line starting around col_offset
+                # This handles cases where col_offset might be approximate
+                search_start = max(0, ts_usage.col_offset - 10)
+                pos = line.find(old_prefix, search_start)
+                if pos != -1:
+                    replacements.append((ts_usage.lineno, pos, old_prefix, new_prefix))
 
     if not replacements and not imports_by_location:
         return source
+
+    # Deduplicate replacements (same position might be added multiple times)
+    seen_replacements: set[tuple[int, int, str, str]] = set()
+    unique_replacements: list[tuple[int, int, str, str]] = []
+    for rep in replacements:
+        if rep not in seen_replacements:
+            seen_replacements.add(rep)
+            unique_replacements.append(rep)
+    replacements = unique_replacements
 
     # Apply replacements in reverse order (bottom-up, right-to-left)
     replacements.sort(key=lambda x: (x[0], x[1]), reverse=True)

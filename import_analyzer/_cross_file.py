@@ -10,6 +10,8 @@ from pathlib import Path
 
 from import_analyzer._ast_helpers import AttributeAccessCollector
 from import_analyzer._ast_helpers import ImportExtractor
+from import_analyzer._ast_helpers import TypeStringAttributeCollector
+from import_analyzer._ast_helpers import TypeStringAttrUsage
 from import_analyzer._ast_helpers import collect_dunder_all_names
 from import_analyzer._data import ImplicitReexport
 from import_analyzer._data import ImportEdge
@@ -17,6 +19,7 @@ from import_analyzer._data import ImportInfo
 from import_analyzer._data import IndirectAttributeAccess
 from import_analyzer._data import IndirectImport
 from import_analyzer._data import ModuleInfo
+from import_analyzer._data import TypeStringUsage
 from import_analyzer._detection import find_unused_imports
 from import_analyzer._graph import DefinitionCollector
 from import_analyzer._graph import ImportGraph
@@ -597,6 +600,10 @@ class CrossFileAnalyzer:
         2. mod could be a submodule or re-exported module
         3. LOGGER is the final attribute to check for indirect access
 
+        Also detects indirect accesses in type comments and string annotations:
+        - x = None  # type: models.LOGGER
+        - y: "models.LOGGER" = None
+
         For each usage, traces through the chain to find if the final
         attribute is re-exported from another source.
         """
@@ -618,16 +625,28 @@ class CrossFileAnalyzer:
             # Parse file and collect attribute usages
             try:
                 source = file_path.read_text(encoding="utf-8")
-                tree = ast.parse(source)
+                tree = ast.parse(source, type_comments=True)
             except (OSError, SyntaxError, UnicodeDecodeError):
                 continue
 
-            collector = AttributeAccessCollector(set(module_imports.keys()))
-            collector.visit(tree)
+            # Collect code attribute usages
+            code_collector = AttributeAccessCollector(set(module_imports.keys()))
+            code_collector.visit(tree)
+
+            # Collect type string attribute usages
+            type_string_collector = TypeStringAttributeCollector(
+                set(module_imports.keys()),
+            )
+            type_string_collector.visit(tree)
 
             # For each root import and its usages
-            for bound_name, usages in collector.usages.items():
-                if not usages:
+            for bound_name in module_imports:
+                code_usages = code_collector.usages.get(bound_name, [])
+                type_usages: list[TypeStringAttrUsage] = [
+                    u for u in type_string_collector.usages if u.root_name == bound_name
+                ]
+
+                if not code_usages and not type_usages:
                     continue
 
                 imp = module_imports[bound_name]
@@ -642,15 +661,33 @@ class CrossFileAnalyzer:
                 if not root_module_path:
                     continue
 
-                # Group usages by attr_path (as tuple for hashability)
-                by_path: dict[tuple[str, ...], list[tuple[int, int]]] = defaultdict(
+                # Group code usages by attr_path (as tuple for hashability)
+                code_by_path: dict[tuple[str, ...], list[tuple[int, int]]] = defaultdict(
                     list,
                 )
-                for u in usages:
+                for u in code_usages:
                     path_key = tuple(u.attr_path)
-                    by_path[path_key].append((u.lineno, u.col_offset))
+                    code_by_path[path_key].append((u.lineno, u.col_offset))
 
-                for attr_path_tuple, usage_locs in by_path.items():
+                # Group type string usages by attr_path
+                type_by_path: dict[
+                    tuple[str, ...], list[TypeStringUsage],
+                ] = defaultdict(list)
+                for tu in type_usages:
+                    path_key = tuple(tu.attr_path)
+                    type_by_path[path_key].append(
+                        TypeStringUsage(
+                            lineno=tu.lineno,
+                            col_offset=tu.col_offset,
+                            end_col_offset=tu.end_col_offset,
+                            context=tu.context,
+                        ),
+                    )
+
+                # Get all unique attr paths
+                all_paths = set(code_by_path.keys()) | set(type_by_path.keys())
+
+                for attr_path_tuple in all_paths:
                     attr_path = list(attr_path_tuple)
                     if not attr_path:
                         continue
@@ -684,9 +721,10 @@ class CrossFileAnalyzer:
                             attr_path=attr_path,
                             attr_name=final_attr,
                             original_name=original_name,
-                            usages=usage_locs,
+                            usages=code_by_path.get(attr_path_tuple, []),
                             current_source=final_module,
                             original_source=original_source,
+                            type_string_usages=type_by_path.get(attr_path_tuple, []),
                             is_same_package=is_same_pkg,
                         ),
                     )
