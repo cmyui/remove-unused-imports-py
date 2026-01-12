@@ -2273,3 +2273,302 @@ def test_fix_indirect_attr_access_no_duplicate_imports():
         assert "extensions.db" in app_content
         assert "models.db" not in app_content or "import models" in app_content
         assert "providers.db" not in app_content or "import providers" in app_content
+
+
+# =============================================================================
+# Type comment indirect attribute access detection
+# =============================================================================
+
+
+def test_indirect_attr_access_type_comment_basic():
+    """Should detect module.attr pattern in type comments."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        root = Path(tmpdir).resolve()
+
+        # logger.py defines LOGGER
+        (root / "logger.py").write_text("LOGGER = 'logger instance'\n")
+
+        # models/__init__.py re-exports LOGGER from logger.py
+        models = root / "models"
+        models.mkdir()
+        (models / "__init__.py").write_text("from logger import LOGGER\n")
+
+        # app.py uses models.LOGGER in type comment
+        (root / "app.py").write_text(
+            "import models\n"
+            "x = None  # type: models.LOGGER\n",
+        )
+
+        graph = build_import_graph(root / "app.py")
+        result = analyze_cross_file(graph, entry_point=root / "app.py")
+
+        # Should detect the indirect attribute access in type comment
+        assert len(result.indirect_attr_accesses) == 1
+        acc = result.indirect_attr_accesses[0]
+        assert acc.file == root / "app.py"
+        assert acc.import_name == "models"
+        assert acc.attr_name == "LOGGER"
+        assert acc.original_source == root / "logger.py"
+        assert len(acc.type_string_usages) == 1
+        assert acc.type_string_usages[0].context == "type_comment"
+
+
+def test_indirect_attr_access_type_comment_mixed_code_and_comment():
+    """Should detect both code usage and type comment usage."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        root = Path(tmpdir).resolve()
+
+        # logger.py defines LOGGER
+        (root / "logger.py").write_text("LOGGER = 'logger instance'\n")
+
+        # models/__init__.py re-exports LOGGER
+        models = root / "models"
+        models.mkdir()
+        (models / "__init__.py").write_text("from logger import LOGGER\n")
+
+        # app.py uses both in code and type comment
+        (root / "app.py").write_text(
+            "import models\n"
+            "x = None  # type: models.LOGGER\n"
+            "models.LOGGER.info('hello')\n",
+        )
+
+        graph = build_import_graph(root / "app.py")
+        result = analyze_cross_file(graph, entry_point=root / "app.py")
+
+        # Should detect both usages as one IndirectAttributeAccess
+        assert len(result.indirect_attr_accesses) == 1
+        acc = result.indirect_attr_accesses[0]
+        assert len(acc.usages) == 1  # Code usage
+        assert len(acc.type_string_usages) == 1  # Type comment usage
+
+
+def test_indirect_attr_access_type_comment_function_signature():
+    """Should detect module.attr in function signature type comments."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        root = Path(tmpdir).resolve()
+
+        # logger.py defines LOGGER
+        (root / "logger.py").write_text("LOGGER = 'logger instance'\n")
+
+        # models/__init__.py re-exports LOGGER
+        models = root / "models"
+        models.mkdir()
+        (models / "__init__.py").write_text("from logger import LOGGER\n")
+
+        # app.py uses models.LOGGER in function type comment
+        (root / "app.py").write_text(
+            "import models\n"
+            "def foo(x):  # type: (models.LOGGER) -> models.LOGGER\n"
+            "    return x\n",
+        )
+
+        graph = build_import_graph(root / "app.py")
+        result = analyze_cross_file(graph, entry_point=root / "app.py")
+
+        # Should detect indirect access (may be multiple usages for arg and return)
+        assert len(result.indirect_attr_accesses) >= 1
+        acc = result.indirect_attr_accesses[0]
+        assert acc.import_name == "models"
+        assert acc.attr_name == "LOGGER"
+
+
+# =============================================================================
+# String annotation indirect attribute access detection
+# =============================================================================
+
+
+def test_indirect_attr_access_string_annotation_basic():
+    """Should detect module.attr pattern in string annotations."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        root = Path(tmpdir).resolve()
+
+        # logger.py defines LOGGER
+        (root / "logger.py").write_text("LOGGER = 'logger instance'\n")
+
+        # models/__init__.py re-exports LOGGER from logger.py
+        models = root / "models"
+        models.mkdir()
+        (models / "__init__.py").write_text("from logger import LOGGER\n")
+
+        # app.py uses models.LOGGER in string annotation
+        (root / "app.py").write_text(
+            "import models\n"
+            'x: "models.LOGGER" = None\n',
+        )
+
+        graph = build_import_graph(root / "app.py")
+        result = analyze_cross_file(graph, entry_point=root / "app.py")
+
+        # Should detect the indirect attribute access in string annotation
+        assert len(result.indirect_attr_accesses) == 1
+        acc = result.indirect_attr_accesses[0]
+        assert acc.file == root / "app.py"
+        assert acc.import_name == "models"
+        assert acc.attr_name == "LOGGER"
+        assert acc.original_source == root / "logger.py"
+        assert len(acc.type_string_usages) == 1
+        assert acc.type_string_usages[0].context == "string_annotation"
+
+
+def test_indirect_attr_access_string_annotation_function():
+    """Should detect module.attr in function string annotations."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        root = Path(tmpdir).resolve()
+
+        # logger.py defines LOGGER
+        (root / "logger.py").write_text("LOGGER = 'logger instance'\n")
+
+        # models/__init__.py re-exports LOGGER
+        models = root / "models"
+        models.mkdir()
+        (models / "__init__.py").write_text("from logger import LOGGER\n")
+
+        # app.py uses models.LOGGER in function annotation
+        (root / "app.py").write_text(
+            "import models\n"
+            'def foo(x: "models.LOGGER") -> "models.LOGGER":\n'
+            "    return x\n",
+        )
+
+        graph = build_import_graph(root / "app.py")
+        result = analyze_cross_file(graph, entry_point=root / "app.py")
+
+        # Should detect indirect access
+        assert len(result.indirect_attr_accesses) >= 1
+        acc = result.indirect_attr_accesses[0]
+        assert acc.import_name == "models"
+        assert acc.attr_name == "LOGGER"
+
+
+# =============================================================================
+# Autofix for type string indirect attribute access
+# =============================================================================
+
+
+def test_fix_indirect_attr_access_type_comment():
+    """Should rewrite type comment to use direct source."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        root = Path(tmpdir).resolve()
+
+        # logger.py defines LOGGER
+        (root / "logger.py").write_text("LOGGER = 'logger instance'\n")
+
+        # models/__init__.py re-exports LOGGER
+        models = root / "models"
+        models.mkdir()
+        (models / "__init__.py").write_text("from logger import LOGGER\n")
+
+        # app.py uses models.LOGGER in type comment
+        (root / "app.py").write_text(
+            "import models\n"
+            "x = None  # type: models.LOGGER\n",
+        )
+
+        # Run fix with strict mode (since models/__init__.py re-exports from logger.py,
+        # this is same-package and needs strict mode to be flagged)
+        check_cross_file(root / "app.py", fix_indirect=True, strict_indirect_imports=True)
+
+        # Verify the fix
+        app_content = (root / "app.py").read_text()
+
+        # Should have the new import
+        assert "import logger" in app_content
+        # Type comment should be rewritten
+        assert "logger.LOGGER" in app_content
+
+
+def test_fix_indirect_attr_access_string_annotation():
+    """Should rewrite string annotation to use direct source."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        root = Path(tmpdir).resolve()
+
+        # logger.py defines LOGGER
+        (root / "logger.py").write_text("LOGGER = 'logger instance'\n")
+
+        # models/__init__.py re-exports LOGGER
+        models = root / "models"
+        models.mkdir()
+        (models / "__init__.py").write_text("from logger import LOGGER\n")
+
+        # app.py uses models.LOGGER in string annotation
+        (root / "app.py").write_text(
+            "import models\n"
+            'x: "models.LOGGER" = None\n',
+        )
+
+        # Run fix with strict mode
+        check_cross_file(root / "app.py", fix_indirect=True, strict_indirect_imports=True)
+
+        # Verify the fix
+        app_content = (root / "app.py").read_text()
+
+        # Should have the new import
+        assert "import logger" in app_content
+        # String annotation should be rewritten
+        assert "logger.LOGGER" in app_content
+
+
+def test_fix_indirect_attr_access_mixed_code_and_type_string():
+    """Should rewrite both code and type string usages."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        root = Path(tmpdir).resolve()
+
+        # logger.py defines LOGGER
+        (root / "logger.py").write_text("LOGGER = 'logger instance'\n")
+
+        # models/__init__.py re-exports LOGGER
+        models = root / "models"
+        models.mkdir()
+        (models / "__init__.py").write_text("from logger import LOGGER\n")
+
+        # app.py uses models.LOGGER in both code and type comment
+        (root / "app.py").write_text(
+            "import models\n"
+            "x = None  # type: models.LOGGER\n"
+            "models.LOGGER.info('hello')\n",
+        )
+
+        # Run fix with strict mode
+        check_cross_file(root / "app.py", fix_indirect=True, strict_indirect_imports=True)
+
+        # Verify the fix
+        app_content = (root / "app.py").read_text()
+
+        # Should have the new import
+        assert "import logger" in app_content
+        # All usages should be rewritten
+        assert app_content.count("logger.LOGGER") >= 2
+        # No more models.LOGGER
+        assert "models.LOGGER" not in app_content
+
+
+def test_fix_indirect_attr_access_cross_package():
+    """Cross-package re-exports should be flagged and fixed by default."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        root = Path(tmpdir).resolve()
+
+        # logger.py defines LOGGER (in root, not in models package)
+        (root / "logger.py").write_text("LOGGER = 'logger'\n")
+
+        # models/__init__.py re-exports LOGGER from outside the package
+        models = root / "models"
+        models.mkdir()
+        (models / "__init__.py").write_text("from logger import LOGGER\n")
+
+        # app.py uses models.LOGGER in type comment
+        (root / "app.py").write_text(
+            "import models\n"
+            "x = None  # type: models.LOGGER\n",
+        )
+
+        # Run fix WITHOUT strict mode - cross-package should still be flagged
+        check_cross_file(root / "app.py", fix_indirect=True, strict_indirect_imports=False)
+
+        # Verify the fix
+        app_content = (root / "app.py").read_text()
+
+        # Should have the new import
+        assert "import logger" in app_content
+        # Type comment should be rewritten
+        assert "logger.LOGGER" in app_content
